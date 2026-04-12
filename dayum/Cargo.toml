@@ -1,0 +1,21 @@
+[package]
+name = "dayum"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+name = "dayum"
+path = "src/lib.rs"
+
+[[bin]]
+name = "dayum"
+path = "src/main.rs"
+
+[[test]]
+name = "tests"
+path = "tests/tests.rs"
+
+[dependencies]
+flexi_logger = "0.31.8"
+log = "0.4.29"
+rstest = "0.26.1"
