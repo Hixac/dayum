@@ -61,15 +61,29 @@ impl<'a> Scanner<'a> {
         Some(toktype)
     }
 
-    fn scan_identifier(&mut self) -> Option<TokenType> {
+    fn scan_identifier(&mut self, start: usize) -> Option<TokenType> {
         while let Some(c) = self.peek() {
             if !c.is_alphanumeric() && c != '_' {
-                return Some(TokenType::Identifier);
+                break;
             }
             self.next_char().unwrap();
         }
 
-        Some(TokenType::Identifier)
+        match &self.source[start..self.pos] {
+            "int" => Some(TokenType::KwInt),
+            "char" => Some(TokenType::KwChar),
+            "float" => Some(TokenType::KwFloat),
+            "void" => Some(TokenType::KwVoid),
+            "struct" => Some(TokenType::KwStruct),
+            "if" => Some(TokenType::KwIf),
+            "else" => Some(TokenType::KwElse),
+            "while" => Some(TokenType::KwWhile),
+            "return" => Some(TokenType::KwReturn),
+            "break" => Some(TokenType::KwBreak),
+            "continue" => Some(TokenType::KwContinue),
+            _  => Some(TokenType::Identifier)
+        }
+
     }
 
     fn scan_string(&mut self) -> Option<TokenType> {
@@ -172,7 +186,7 @@ impl<'a> Iterator for Scanner<'a> {
         }
 
         if c.is_alphabetic() {
-            let token_type = self.scan_identifier()?;
+            let token_type = self.scan_identifier(start)?;
             return Some(self.make_token(token_type, start));
         }
 

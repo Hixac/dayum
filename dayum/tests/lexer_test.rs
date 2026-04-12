@@ -4,7 +4,7 @@ use dayum::lexer::TokenType;
 
 #[rstest]
 fn it_works() {
-    let mut scanner = Scanner::new("1 2.32 3 - == != \n>= // string \"string\" ");
+    let mut scanner = Scanner::new("1 2.32 3 - == != \n>= // string \"string\" struct");
 
     let integer_literal = scanner.next().unwrap();
     assert_eq!(integer_literal.token_type, TokenType::IntegerLiteral);
@@ -47,6 +47,10 @@ fn it_works() {
     let string = scanner.next().unwrap();
     assert_eq!(string.token_type, TokenType::StringLiteral);
     assert_eq!(string.lexeme, "\"string\"");
+
+    let kwstruct = scanner.next().unwrap();
+    assert_eq!(kwstruct.token_type, TokenType::KwStruct);
+    assert_eq!(kwstruct.lexeme, "struct");
 
     let eof = scanner.next().unwrap();
     assert_eq!(eof.token_type, TokenType::EndOfFile);
