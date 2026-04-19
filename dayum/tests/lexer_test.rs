@@ -1,8 +1,7 @@
-use rstest::*;
 use dayum::lexer::scan::Scanner;
 use dayum::lexer::TokenType;
 
-#[rstest]
+#[cfg(test)]
 fn it_works() {
     let mut scanner = Scanner::new("1 2.32 3 - == != \n>= // string \"string\" struct");
 

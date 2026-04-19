@@ -28,6 +28,7 @@ pub enum TokenType {
     OpMinus,     // -
     OpStar,      // *
     OpSlash,     // /
+    OpPercent,   // %
     OpEqual,     // =
     OpLess,      // <
     OpGreater,   // >

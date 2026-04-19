@@ -1,6 +1,6 @@
-use dayum::{logging};
+use dayum::{lexer::scan::Scanner, logging, parser::Parser, vm::VirtualMachine};
 use std::{env, fs};
-use log::{info, error};
+use tracing::{info, error};
 
 fn parse_args() -> Result<String, ()> {
     let args: Vec<_> = env::args().collect();
@@ -22,14 +22,16 @@ fn run(path: &str) -> Result<(), ()> {
         return Err(())
     };
 
+    let mut parser = Parser::new(Scanner::new(&src).peekable());
+    parser.expression().unwrap();
+    let mut vm = VirtualMachine::new(&parser.chunk);
+    vm.exec().unwrap();
 
     Ok(())
 }
 
 fn main() -> Result<(), ()> {
-    let _ = logging::init_logger().map_err(|e| {
-        println!("FATAL: {}", e)
-    });
+    let _ = logging::init_logger(false);
 
     info!("INTERPRETER STARTED!");
 

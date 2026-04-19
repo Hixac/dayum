@@ -16,6 +16,7 @@ name = "tests"
 path = "tests/tests.rs"
 
 [dependencies]
-flexi_logger = "0.31.8"
-log = "0.4.29"
-rstest = "0.26.1"
+anyhow = "1.0.102"
+tracing = "0.1.44"
+tracing-appender = "0.2.4"
+tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }

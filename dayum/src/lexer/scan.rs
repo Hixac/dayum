@@ -1,5 +1,5 @@
 use crate::lexer::{Token, TokenType};
-use log::{error};
+use tracing::{error, info};
 
 
 pub struct Scanner<'a> {
@@ -36,7 +36,9 @@ impl<'a> Scanner<'a> {
     }
 
     fn make_token(&self, token_type: TokenType, start: usize) -> Token<'a> {
-        Token { pos: start, line: self.line, token_type, lexeme: &self.source[start..self.pos] }
+        let token = Token { pos: start, line: self.line, token_type, lexeme: &self.source[start..self.pos] };
+        info!("{}", token);
+        token
     }
 
     fn scan_number(&mut self) -> Option<TokenType> {
@@ -111,6 +113,7 @@ impl<'a> Scanner<'a> {
             '+' => Some(TokenType::OpPlus),
             '-' => Some(TokenType::OpMinus),
             '*' => Some(TokenType::OpStar),
+            '%' => Some(TokenType::OpPercent),
 
             ';' => Some(TokenType::Semicolon),
             ',' => Some(TokenType::Comma),
