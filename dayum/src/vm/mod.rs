@@ -1,22 +1,25 @@
-use anyhow::{Result, Context, bail};
+use anyhow::{Result, Context};
 
 use crate::parser::*;
 
 use super::vm::types::*;
 
 mod types;
+mod ops;
 
 
 pub struct VirtualMachine<'a> {
-    stack: Vec<Value>,
-    chunk: &'a Chunk
+    stack: Vec<Val>,
+    chunk: &'a Chunk,
+    heap: HeapPool,
 }
 
 impl<'a> VirtualMachine<'a> {
     pub fn new(chunk: &'a Chunk) -> Self {
         VirtualMachine {
             stack: Vec::with_capacity(256),
-            chunk
+            chunk,
+            heap: HeapPool::new()
         }
     }
 
@@ -35,88 +38,76 @@ impl<'a> VirtualMachine<'a> {
             match ins.opcode {
                 OpCode::LoadConst => {
                     let v = self.chunk.constants[op as usize].clone();
+                    let v = self.to_val(&v)?;
                     self.push(v);
                 },
                 OpCode::Add => {
                     let b = self.pop()?;
                     let a = self.pop()?;
-                    let v = self.add(a, b);
+                    let v = self.add(a, b)?;
                     self.push(v);
                 },
                 OpCode::Sub => {
                     let b = self.pop()?;
                     let a = self.pop()?;
-                    let v = self.sub(a, b);
+                    let v = self.sub(a, b)?;
                     self.push(v);
                 },
                 OpCode::Mul => {
                     let b = self.pop()?;
                     let a = self.pop()?;
-                    let v = self.mul(a, b);
+                    let v = self.mul(a, b)?;
                     self.push(v);
                 },
                 OpCode::Div => {
                     let b = self.pop()?;
                     let a = self.pop()?;
-                    let v = self.div(a, b);
+                    let v = self.div(a, b)?;
                     self.push(v);
                 },
                 OpCode::Not => {
                     let a = self.pop()?;
-
+                    
                 },
                 OpCode::Stop => {
-                    println!("{:?}", self.stack);
                     return Ok(())
                 },
             }
+            self.print_stack()?;
         }
     }
 
-    fn add(&self, a: Value, b: Value) -> Value {
-        use Value::*;
-
-        match (a, b) {
-            (Int(v1), Int(v2)) => Int(v1 + v2),
-            (Float(v1), Float(v2)) => Float(v1 + v2),
-            (Str(v1), Str(v2)) => Str(format!("{}{}", v1, v2)),
-            _ => todo!()  // Throw error or make implicit coerce?
-        }
+    fn to_val(&mut self, v: &Value) -> Result<Val> {
+        Ok(match v {
+            Value::Int(i) => Val::int(*i as i64),
+            Value::Float(f) => Val::float(*f as f64),
+            Value::Bool(b) => Val::bool(*b),
+            Value::Str(s) => self.heap.alloc(Obj::Str(s.clone()))?,
+        })
     }
 
-    fn sub(&self, a: Value, b: Value) -> Value {
-        use Value::*;
+    #[inline] pub(crate) fn push(&mut self, v: Val) { self.stack.push(v); }
 
-        match (a, b) {
-            (Int(v1), Int(v2)) => Int(v1 - v2),
-            (Float(v1), Float(v2)) => Float(v1 - v2),
-            _ => todo!()  // Throw error or make implicit coerce?
-        }
-    }
-
-    fn mul(&self, a: Value, b: Value) -> Value {
-        use Value::*;
-
-        match (a, b) {
-            (Int(v1), Int(v2)) => Int(v1 * v2),
-            (Float(v1), Float(v2)) => Float(v1 * v2),
-            _ => todo!()  // Throw error or make implicit coerce?
-        }
-    }
-
-    fn div(&self, a: Value, b: Value) -> Value {
-        use Value::*;
-
-        match (a, b) {
-            (Int(v1), Int(v2)) => Int(v1 / v2),
-            (Float(v1), Float(v2)) => Float(v1 / v2),
-            _ => todo!()  // Throw error or make implicit coerce?
-        }
-    }
-
-    #[inline] pub(crate) fn push(&mut self, v: Value) { self.stack.push(v); }
-
-    #[inline] pub(crate) fn pop(&mut self) -> Result<Value> {
+    #[inline] pub(crate) fn pop(&mut self) -> Result<Val> {
         self.stack.pop().context("Stack underflow!")
+    }
+
+    pub fn print_stack(&self) -> Result<()> {
+        let mut output = "[".to_string();
+        for i in &self.stack {
+            if i.is_heap() {
+                output = format!("{}{:?}, ", output, self.heap.get(*i));
+                continue
+            }
+            output = format!("{}{:?}, ", output, i);
+        }
+        let mut output = output.chars();
+        output.next_back();
+        output.next_back();
+        let output = output.as_str();  // Is it kinda stupid to do that?
+
+        println!("{}]", output);
+
+        Ok(())
     }
 }

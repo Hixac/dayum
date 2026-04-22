@@ -1,13 +1,16 @@
+use anyhow::Result;
 
+use std::fmt::Debug;
+use std::collections::HashMap;
 
 const QNAN: u64 = 0x7FFC_0000_0000_0000;
 const SIGN: u64 = 0x8000_0000_0000_0000;
 const TAG_TRUE: u64 = QNAN | 2;
 const TAG_FALSE: u64 = QNAN | 3;
 const TAG_INT: u64 = QNAN | SIGN;
+const TAG_HEAP: u64 = QNAN | 4;
 
-
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy)]
 pub struct Val(pub(crate) u64);
 
 impl PartialEq for Val {
@@ -40,6 +43,7 @@ impl Val {
         if i > Self::INT_MAX || i < Self::INT_MIN { None } else { Some(Self::int(i)) }
     }
     #[inline(always)] pub fn bool(b: bool) -> Self { Self(if b { TAG_TRUE } else { TAG_FALSE }) }
+    #[inline(always)] pub fn heap(idx: u32) -> Self { Self(TAG_HEAP | ((idx as u64) << 4)) }
 
     #[inline(always)] pub fn is_float(&self) -> bool { (self.0 & QNAN) != QNAN }
     #[inline(always)] pub fn is_int(&self) -> bool { (self.0 & (QNAN | SIGN)) == TAG_INT }
@@ -57,4 +61,65 @@ impl Val {
     }
     #[inline(always)] pub fn as_bool(&self) -> bool { self.0 == TAG_TRUE }
     #[inline(always)] pub fn as_heap(&self) -> u32 { ((self.0 >> 4) & 0x0FFF_FFFF) as u32 }
+}
+
+impl Debug for Val {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if self.is_int() {
+            return write!(f, "{} (int)", self.as_int())
+        }
+        if self.is_float() {
+            return write!(f, "{} (float)", self.as_float())
+        }
+        if self.is_bool() {
+            return write!(f, "{} (bool)", self.as_bool())
+        }
+        if self.is_heap() {
+            return write!(f, "{} (heap)", self.as_heap())
+        }
+        todo!()
+    }
+}
+
+#[derive(Debug)]
+pub enum Obj {
+    Str(String),
+}
+
+struct HeapSlot {
+    obj: Obj
+}
+
+pub struct HeapPool {
+    slots: Vec<HeapSlot>,
+    strings: HashMap<String, u32>,
+}
+
+impl HeapPool {
+    pub fn new() -> Self {
+        Self {
+            slots: Vec::new(),
+            strings: HashMap::new(),
+        }
+    }
+
+    pub fn alloc(&mut self, obj: Obj) -> Result<Val> {
+        if let Obj::Str(ref s) = obj &&
+            s.len() <= 128 &&
+           let Some(&idx) = self.strings.get(s) {
+            return Ok(Val::heap(idx))
+        }
+
+        let idx = self.slots.len() as u32;
+        self.slots.push(HeapSlot { obj });
+
+        if let Obj::Str(s) = &self.slots[idx as usize].obj &&
+            s.len() <= 128 { self.strings.insert(s.clone(), idx); }
+
+        Ok(Val::heap(idx))
+    }
+
+    #[inline(always)] pub fn get(&self, v: Val) -> &Obj {
+        &self.slots[v.as_heap() as usize].obj
+    }
 }

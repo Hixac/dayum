@@ -83,6 +83,8 @@ impl<'a> Scanner<'a> {
             "return" => Some(TokenType::KwReturn),
             "break" => Some(TokenType::KwBreak),
             "continue" => Some(TokenType::KwContinue),
+            "true" => Some(TokenType::KwTrue),
+            "false" => Some(TokenType::KwFalse),
             _  => Some(TokenType::Identifier)
         }
 

@@ -1,5 +1,5 @@
 use std::iter::Peekable;
-use anyhow::{Result, bail};
+use anyhow::{Context, Result, bail};
 use crate::lexer::{Token, TokenType};
 pub use types::*;
 
@@ -28,6 +28,15 @@ impl<'a, I: Iterator<Item = Token<'a>>> Parser<'a, I> {
             Some(t) => Some(t.token_type),
             _ => None
         }
+    }
+
+    fn eat(&mut self, t: TokenType) -> Result<()> {
+        if t == self.peek().with_context(|| format!("Not found any token"))? {
+            self.advance()?;
+            return Ok(())
+        }
+
+        bail!("Not found {:?}", t)
     }
 
     fn emit_const(&mut self, value: Value) -> () {

@@ -7,6 +7,8 @@ pub enum TokenType {
     KwChar,
     KwFloat,
     KwVoid,
+    KwTrue,
+    KwFalse,
     KwStruct,     // optional, but common for "with types"
 
     // ----- Other keywords -----

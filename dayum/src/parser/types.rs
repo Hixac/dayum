@@ -12,7 +12,8 @@ pub enum OpCode {
 pub enum Value {
     Int(i32),
     Float(f32),
-    Str(String)
+    Str(String),
+    Bool(bool)
 }
 
 #[derive(Debug)]

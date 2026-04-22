@@ -11,9 +11,6 @@ impl<'a, I: Iterator<Item = Token<'a>>> Parser<'a, I> {
     pub fn expression(&mut self) -> Result<()> { 
         self.expr_bp(0)?;
 
-        self.chunk.emit(OpCode::Stop, 0);
-
-        println!("{:?}", self.chunk);
         Ok(())
     }
 
@@ -59,13 +56,25 @@ impl<'a, I: Iterator<Item = Token<'a>>> Parser<'a, I> {
         let t = self.advance()?;
         match t.token_type {
             TokenType::StringLiteral => {
-                self.emit_const(Value::Str(t.lexeme.to_string()));
+                let mut chars = t.lexeme.chars();
+                chars.next();
+                chars.next_back();  // to remove quotes
+                let string_literal = chars.as_str().to_string();
+
+                self.emit_const(Value::Str(string_literal));
             }
             TokenType::IntegerLiteral => {
                 self.emit_const(Value::Int(t.lexeme.parse().unwrap()));
             }
             TokenType::FloatLiteral => {
                 self.emit_const(Value::Float(t.lexeme.parse().unwrap()));
+            }
+            TokenType::KwTrue | TokenType::KwFalse => {
+                self.emit_const(Value::Bool(t.lexeme.parse().unwrap()));
+            }
+            TokenType::Lparen => {
+                self.expression()?;
+                self.eat(TokenType::Rparen)?
             }
             _ => ()
         }
