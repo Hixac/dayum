@@ -1,3 +1,5 @@
+use std::hash::Hash;
+
 pub mod scan;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -64,7 +66,7 @@ pub enum TokenType {
     Error,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Token<'a> {
     pub pos: usize,
     pub line: u16,
@@ -78,3 +80,17 @@ impl<'a> std::fmt::Display for Token<'a> {
             self.pos, self.token_type, self.line, self.lexeme)
     }
 }
+
+impl<'a> Hash for Token<'a> {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.lexeme.hash(state);
+    }
+}
+
+impl<'a> PartialEq for Token<'a> {
+    fn eq(&self, other: &Self) -> bool {
+        return self.lexeme == other.lexeme;
+    }
+}
+
+impl<'a> Eq for Token<'a> { }

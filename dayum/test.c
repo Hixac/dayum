@@ -1,3 +1,4 @@
-void function(int shit) {
-    damn[1 + 1];
+void function() {
+    string damn = 123;
+    damn = 123;
 }

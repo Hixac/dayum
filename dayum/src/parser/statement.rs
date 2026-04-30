@@ -1,4 +1,4 @@
-use anyhow::{Context, Result, bail};
+use anyhow::{Result, bail};
 
 use super::ast::{Stmt, Decl, TypeSpec, Expr};
 use super::Parser;
@@ -6,8 +6,13 @@ use crate::{lexer::{Token, TokenType}};
 
 
 impl<'a, I: Iterator<Item = Token<'a>>> Parser<'a, I> {
-    pub fn external_declaration(&mut self) -> Result<Stmt<'a>> {
-        self.declaration()?.with_context(|| "Not allowed")
+    pub(crate) fn external_declarations(&mut self) -> Result<Vec<Stmt<'a>>> {
+        let mut decls = Vec::new();
+        loop {
+            let Some(decl) = self.declaration()? else { break; };
+            decls.push(decl);
+        }
+        Ok(decls)
     }
 
     fn declarator(&mut self) -> Result<Decl<'a>> {
@@ -162,6 +167,14 @@ impl<'a, I: Iterator<Item = Token<'a>>> Parser<'a, I> {
         match token.token_type {
             KwIf => self.selection_statement(),
             Lbrace => self.compound_statement(),
+            KwReturn => {
+                self.eat(KwReturn)?;
+                let expr = self.expression_statement()?;
+                match expr {  // is it okay to do that, huh?
+                    Stmt::Expression(expr) => Ok(Stmt::Return(expr)),
+                    _ => unreachable!()
+                }
+            }
             _ => self.expression_statement()
         }
     }

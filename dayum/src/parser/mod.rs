@@ -2,22 +2,25 @@ use std::iter::Peekable;
 use log::info;
 use anyhow::{Result, bail};
 
-use crate::{lexer::{Token, TokenType}};
-use ast::Decl;
+use crate::lexer::{Token, TokenType};
+use ast::Stmt;
 
-mod ast;
+pub mod ast;
 mod expression;
 mod statement;
 
 
 pub struct Parser<'a, I: Iterator<Item = Token<'a>>> {
     tokens: Peekable<I>,
-    pub ast: Vec<Decl<'a>>
 }
 
 impl<'a, I: Iterator<Item = Token<'a>>> Parser<'a, I> {
     pub fn new(tokens: Peekable<I>) -> Self {
-        Self { tokens, ast: Vec::new()  }
+        Self { tokens }
+    }
+
+    pub fn parse(&mut self) -> Result<Vec<Stmt<'a>>> {
+        self.external_declarations()
     }
 
     fn advance(&mut self) -> Result<Token<'a>> {

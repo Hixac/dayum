@@ -12,7 +12,7 @@ pub struct Scanner<'a> {
 
 impl<'a> Scanner<'a> {
     pub fn new(source: &'a str) -> Self {
-        Self { source, pos: 0, line: 0, is_eofed: false }
+        Self { source, pos: 0, line: 1, is_eofed: false }
     }
 
     fn next_char(&mut self) -> Option<char> {

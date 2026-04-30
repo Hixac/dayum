@@ -2,7 +2,7 @@ use log::{info, error};
 use dayum::{
     lexer::scan::Scanner,
     parser::Parser,
-    vm::VirtualMachine
+    type_checker::TypeChecker,
 };
 use std::{env, fs};
 
@@ -27,7 +27,10 @@ fn run(path: &str) -> Result<(), ()> {
     };
 
     let mut parser = Parser::new(Scanner::new(&src).peekable());
-    println!("{:?}", parser.external_declaration().unwrap());
+    let stmts = parser.parse().unwrap();
+    let mut type_checker = TypeChecker::new(&stmts);
+    type_checker.check().unwrap();
+    println!("{:?}", stmts);
 
     Ok(())
 }

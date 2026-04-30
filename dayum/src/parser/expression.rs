@@ -6,7 +6,7 @@ use crate::lexer::{Token, TokenType};
 
 
 impl<'a, I: Iterator<Item = Token<'a>>> Parser<'a, I> {
-    pub fn expression(&mut self) -> Result<Expr<'a>> { 
+    pub(crate) fn expression(&mut self) -> Result<Expr<'a>> { 
         self.expr_bp(0)
     }
 

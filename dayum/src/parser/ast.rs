@@ -1,6 +1,6 @@
 use crate::lexer::{Token, TokenType};
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum TypeSpec {
     Int, Float, Char, String, Void, Bool
 }
@@ -57,6 +57,8 @@ pub enum Expr<'a> {
 pub enum Stmt<'a> {
     If{cond: Expr<'a>, stmt: Box<Stmt<'a>>, otherwise: Option<Box<Stmt<'a>>>},
     Compound(Vec<Stmt<'a>>),
+    Return(Expr<'a>),
+
     Expression(Expr<'a>),
     Declarator(TypeSpec, Option<Decl<'a>>, Option<Box<Expr<'a>>>)
 }
