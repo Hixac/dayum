@@ -1,92 +1,123 @@
-use anyhow::Result;
+use anyhow::{Result, bail};
 
+use super::ast::Expr;
 use super::Parser;
-use super::types::OpCode;
-use super::types::Value;
-use crate::lexer::Token;
-use crate::lexer::TokenType;
+use crate::lexer::{Token, TokenType};
 
 
 impl<'a, I: Iterator<Item = Token<'a>>> Parser<'a, I> {
-    pub fn expression(&mut self) -> Result<()> { 
-        self.expr_bp(0)?;
-
-        Ok(())
+    pub fn expression(&mut self) -> Result<Expr<'a>> { 
+        self.expr_bp(0)
     }
 
-    fn expr_bp(&mut self, min_bp: u8) -> Result<()> {
-        match self.peek() {
-            Some(TokenType::OpExclaim) => {
-                self.advance()?;
-                self.expr_bp(5)?;
-                self.chunk.emit(OpCode::Not, 0);
-            },
-            _ => self.unary()?,
-        }
-        self.infix_bp(min_bp)?;
+    fn expr_bp(&mut self, min_bp: u8) -> Result<Expr<'a>> {
+        let mut lhs = self.unary()?;
 
-        Ok(())
-    }
-
-    fn infix_bp(&mut self, min_bp: u8) -> Result<()> {
         loop {
             let Some(op) = self.peek() else { break; };
+            let toktype = op.token_type;
 
-            let Some((l_bp, r_bp, opcode)) = self.infix_binding_power(op) 
-                else { break; };
+            if let Some((l_bp, ())) = self.postfix_binding_power(toktype) {
+                if l_bp < min_bp {
+                    break;
+                }
+
+                match toktype {
+                    TokenType::Lparen => {
+                        self.eat(TokenType::Lparen)?;
+                        let mut args: Vec<Expr<'a>> = Vec::new();
+                        loop {
+                            args.push(self.expression()?);
+                            if self.same(&[TokenType::Rparen]) { break; }
+                            self.eat(TokenType::Comma)?;
+                        }
+                        self.eat(TokenType::Rparen)?;
+                        lhs = Expr::Call { identifier: Box::new(lhs), arguments: args }
+                    },
+                    TokenType::Lbracket => {
+                        self.eat(TokenType::Lbracket)?;
+                        let argument = Box::new(self.expression()?);
+                        self.eat(TokenType::Rbracket)?;
+                        lhs = Expr::Index { identifier: Box::new(lhs), argument }
+                    }
+                    _ => panic!("Wrong op")
+                }
+                continue;
+            }
+
+            let Some((l_bp, r_bp)) = self.infix_binding_power(toktype) else { break; };
 
             if l_bp < min_bp {
                 break;
             }
 
-            self.advance()?;
-            self.expr_bp(r_bp)?;
-            self.chunk.emit(opcode, 0);
+            let op = self.advance()?;
+            let rhs = self.expr_bp(r_bp)?;
+            lhs = Expr::BinaryOp { l: Box::new(lhs), op, r: Box::new(rhs) };
         }
 
-        Ok(())
+        Ok(lhs)
     }
 
-    fn unary(&mut self) -> Result<()> {
-        self.primary()?;
-        Ok(())
+    fn unary(&mut self) -> Result<Expr<'a>> {
+        let Some(token) = self.peek() else {
+            bail!("No tokens left!");
+        };
+
+        match token.token_type {
+            TokenType::OpExclaim => {
+                let token = self.advance()?;
+                let val = self.expr_bp(15)?;
+                Ok(Expr::UnaryOp { op: token, val: Box::new(val) })
+            },
+            _ => Ok(self.primary()?),
+        }
     }
 
-    fn primary(&mut self) -> Result<()> {
+    fn primary(&mut self) -> Result<Expr<'a>> {
         let t = self.advance()?;
         match t.token_type {
             TokenType::StringLiteral => {
-                let mut chars = t.lexeme.chars();
-                chars.next();
-                chars.next_back();  // to remove quotes
-                let string_literal = chars.as_str().to_string();
-
-                self.emit_const(Value::Str(string_literal));
+                Ok(Expr::StringLiteral(t.lexeme.trim_matches('"')))
             }
             TokenType::IntegerLiteral => {
-                self.emit_const(Value::Int(t.lexeme.parse().unwrap()));
+                Ok(Expr::IntLiteral(t.lexeme.parse().unwrap()))
             }
             TokenType::FloatLiteral => {
-                self.emit_const(Value::Float(t.lexeme.parse().unwrap()));
+                Ok(Expr::FloatLiteral(t.lexeme.parse().unwrap()))
             }
             TokenType::KwTrue | TokenType::KwFalse => {
-                self.emit_const(Value::Bool(t.lexeme.parse().unwrap()));
+                Ok(Expr::BoolLiteral(t.lexeme.parse().unwrap()))
             }
             TokenType::Lparen => {
-                self.expression()?;
-                self.eat(TokenType::Rparen)?
+                let group = Ok(Expr::Group(Box::new(self.expression()?)));
+                self.eat(TokenType::Rparen)?;
+                group
             }
-            _ => ()
+            TokenType::Identifier => {
+                Ok(Expr::Identifier(t))
+            }
+            _ => bail!("Token fail on primary grammar. Caused token: {:?}", t)
         }
-        Ok(())
     }
 
-    fn infix_binding_power(&self, tok: TokenType) -> Option<(u8, u8, OpCode)> {
+    fn postfix_binding_power(&self, tok: TokenType) -> Option<(u8, ())> {
         match tok {
-            TokenType::OpPlus => Some((17, 18, OpCode::Add)),
-            TokenType::OpMinus => Some((17, 18, OpCode::Sub)),
-            TokenType::OpStar => Some((19, 20, OpCode::Mul)),
-            TokenType::OpSlash => Some((19, 20, OpCode::Div)),
+            TokenType::Lparen => Some((15, ())),
+            TokenType::Lbracket => Some((16, ())),
+            _ => None,
+        }
+    }
+
+    fn infix_binding_power(&self, tok: TokenType) -> Option<(u8, u8)> {
+        match tok {
+            TokenType::OpPlus => Some((3, 4)),
+            TokenType::OpMinus => Some((3, 4)),
+            TokenType::OpStar => Some((5, 6)),
+            TokenType::OpSlash => Some((5, 6)),
+            TokenType::OpLogAnd => Some((7, 8)),
+            TokenType::OpLogOr => Some((9, 10)),
+            TokenType::OpEqual => Some((21, 20)),
             _ => None,
         }
     }

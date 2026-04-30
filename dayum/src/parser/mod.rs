@@ -1,19 +1,23 @@
 use std::iter::Peekable;
-use anyhow::{Context, Result, bail};
-use crate::lexer::{Token, TokenType};
-pub use types::*;
+use log::info;
+use anyhow::{Result, bail};
 
+use crate::{lexer::{Token, TokenType}};
+use ast::Decl;
+
+mod ast;
 mod expression;
-mod types;
+mod statement;
+
 
 pub struct Parser<'a, I: Iterator<Item = Token<'a>>> {
     tokens: Peekable<I>,
-    pub chunk: Chunk,
+    pub ast: Vec<Decl<'a>>
 }
 
 impl<'a, I: Iterator<Item = Token<'a>>> Parser<'a, I> {
     pub fn new(tokens: Peekable<I>) -> Self {
-        Self { tokens, chunk: Chunk::default() }
+        Self { tokens, ast: Vec::new()  }
     }
 
     fn advance(&mut self) -> Result<Token<'a>> {
@@ -23,24 +27,41 @@ impl<'a, I: Iterator<Item = Token<'a>>> Parser<'a, I> {
         }
     }
 
-    fn peek(&mut self) -> Option<TokenType> {
+    fn peek(&mut self) -> Option<&Token<'a>> {
         match self.tokens.peek() {
-            Some(t) => Some(t.token_type),
+            Some(t) => Some(t),
             _ => None
         }
     }
 
+    fn same(&mut self, t: &[TokenType]) -> bool {
+        let Some(token) = self.peek() else {
+            return false
+        };
+
+        info!("Comparing {:?} and {:?}", token, t);
+        t.contains(&token.token_type)
+    }
+
     fn eat(&mut self, t: TokenType) -> Result<()> {
-        if t == self.peek().with_context(|| format!("Not found any token"))? {
+        let Some(token) = self.peek() else {
+            bail!("Not found any token. EOF")
+        };
+
+        if token.token_type == t {
+            info!("Ate {:?}", t);
             self.advance()?;
             return Ok(())
         }
 
-        bail!("Not found {:?}", t)
+        bail!("Not found {:?} at {:?}", t, token)
     }
 
-    fn emit_const(&mut self, value: Value) -> () {
-        let idx = self.chunk.push_constant(value);
-        self.chunk.emit(OpCode::LoadConst, idx);
+    fn eat_if(&mut self, t: TokenType) -> bool {
+        if let Some(token) = self.peek() && t == token.token_type {
+            self.advance().unwrap();
+            return true;
+        }
+        false
     }
 }

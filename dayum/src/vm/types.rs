@@ -5,6 +5,7 @@ use std::collections::HashMap;
 
 const QNAN: u64 = 0x7FFC_0000_0000_0000;
 const SIGN: u64 = 0x8000_0000_0000_0000;
+const TAG_NONE: u64 = QNAN | 1;
 const TAG_TRUE: u64 = QNAN | 2;
 const TAG_FALSE: u64 = QNAN | 3;
 const TAG_INT: u64 = QNAN | SIGN;
@@ -42,9 +43,11 @@ impl Val {
     #[inline(always)] pub fn int_checked(i: i64) -> Option<Self> {
         if i > Self::INT_MAX || i < Self::INT_MIN { None } else { Some(Self::int(i)) }
     }
+    #[inline(always)] pub fn none() -> Self { Self(TAG_NONE) }
     #[inline(always)] pub fn bool(b: bool) -> Self { Self(if b { TAG_TRUE } else { TAG_FALSE }) }
     #[inline(always)] pub fn heap(idx: u32) -> Self { Self(TAG_HEAP | ((idx as u64) << 4)) }
 
+    #[inline(always)] pub fn is_none(&self) -> bool { self.0 == TAG_NONE }
     #[inline(always)] pub fn is_float(&self) -> bool { (self.0 & QNAN) != QNAN }
     #[inline(always)] pub fn is_int(&self) -> bool { (self.0 & (QNAN | SIGN)) == TAG_INT }
     #[inline(always)] pub fn is_true(&self) -> bool { self.0 == TAG_TRUE }

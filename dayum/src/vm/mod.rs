@@ -1,6 +1,8 @@
-use anyhow::{Result, Context};
+use std::collections::HashMap;
 
-use crate::parser::*;
+use anyhow::{Result, Context, bail};
+
+use crate::compiler::*;
 
 use super::vm::types::*;
 
@@ -12,6 +14,7 @@ pub struct VirtualMachine<'a> {
     stack: Vec<Val>,
     chunk: &'a Chunk,
     heap: HeapPool,
+    globals: HashMap<String, Val>
 }
 
 impl<'a> VirtualMachine<'a> {
@@ -19,7 +22,8 @@ impl<'a> VirtualMachine<'a> {
         VirtualMachine {
             stack: Vec::with_capacity(256),
             chunk,
-            heap: HeapPool::new()
+            heap: HeapPool::new(),
+            globals: HashMap::new()
         }
     }
 
@@ -67,8 +71,46 @@ impl<'a> VirtualMachine<'a> {
                 },
                 OpCode::Not => {
                     let a = self.pop()?;
-                    
+
                 },
+                OpCode::DefineGlobal => {
+                    let name = self.pop()?;
+                    if name.is_heap() {
+                        let obj = self.heap.get(name);
+                        if let Obj::Str(name) = obj {
+                            self.globals.insert(name.to_string(), Val::none());
+                            continue;
+                        }
+                        bail!("Name is not string");
+                    }
+                    bail!("Name is not heap allocated");
+                }
+                OpCode::GetGlobal => {
+                    let name = self.pop()?;
+                    if name.is_heap() {
+                        let obj = self.heap.get(name);
+                        if let Obj::Str(name) = obj {
+                            let value = self.globals.get(name).context("Not found")?;
+                            self.push(value.clone());
+                            continue;
+                        }
+                        bail!("Name is not string");
+                    }
+                    bail!("Name is not heap allocated");
+                }
+                OpCode::SetGlobal => {
+                    let name = self.pop()?;
+                    let val = self.pop()?;
+                    if name.is_heap() {
+                        let obj = self.heap.get(name);
+                        if let Obj::Str(name) = obj {
+                            self.globals.insert(name.to_string(), val);
+                            continue;
+                        }
+                        bail!("Name is not string");
+                    }
+                    bail!("Name is not heap allocated");
+                }
                 OpCode::Stop => {
                     return Ok(())
                 },

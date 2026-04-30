@@ -1,10 +1,10 @@
-
 const MAX_INSTRUCTIONS: usize = 65_535;
 
 #[derive(Debug)]
 pub enum OpCode {
     Add, Sub, Mul, Div, Not,
     LoadConst,
+    DefineGlobal, GetGlobal, SetGlobal,
     Stop
 }
 

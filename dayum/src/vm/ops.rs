@@ -7,7 +7,6 @@ use super::VirtualMachine;
 
 
 impl<'a> VirtualMachine<'a> {
-
     pub fn add(&mut self, a: Val, b: Val) -> Result<Val> {
         if a.is_int() && b.is_int() {
             return Ok(Val::int(a.as_int() + b.as_int()))

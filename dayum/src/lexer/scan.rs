@@ -1,5 +1,5 @@
 use crate::lexer::{Token, TokenType};
-use tracing::{error, info};
+use log::{error, info};
 
 
 pub struct Scanner<'a> {
@@ -74,8 +74,10 @@ impl<'a> Scanner<'a> {
         match &self.source[start..self.pos] {
             "int" => Some(TokenType::KwInt),
             "char" => Some(TokenType::KwChar),
+            "string" => Some(TokenType::KwString),
             "float" => Some(TokenType::KwFloat),
             "void" => Some(TokenType::KwVoid),
+            "bool" => Some(TokenType::KwBool),
             "struct" => Some(TokenType::KwStruct),
             "if" => Some(TokenType::KwIf),
             "else" => Some(TokenType::KwElse),

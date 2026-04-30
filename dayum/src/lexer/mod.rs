@@ -5,8 +5,10 @@ pub enum TokenType {
     // ----- Type keywords -----
     KwInt,
     KwChar,
+    KwString,
     KwFloat,
     KwVoid,
+    KwBool,
     KwTrue,
     KwFalse,
     KwStruct,     // optional, but common for "with types"
@@ -62,7 +64,7 @@ pub enum TokenType {
     Error,
 }
 
-
+#[derive(Debug)]
 pub struct Token<'a> {
     pub pos: usize,
     pub line: u16,
