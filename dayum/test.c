@@ -3,5 +3,5 @@ int function() {
 }
 
 void other() {
-    string var = function();
+    string var = function(1);
 }

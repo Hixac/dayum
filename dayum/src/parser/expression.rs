@@ -26,9 +26,14 @@ impl<'a, I: Iterator<Item = Token<'a>>> Parser<'a, I> {
                     TokenType::Lparen => {
                         self.eat(TokenType::Lparen)?;
                         let mut args: Vec<Expr<'a>> = Vec::new();
+                        if self.same(&[TokenType::Rparen]) {
+                            self.eat(TokenType::Rparen)?;
+                            lhs = Expr::Call { identifier: Box::new(lhs), arguments: args };
+                            continue;
+                        }
                         loop {
-                            if self.same(&[TokenType::Rparen]) { break; }
                             args.push(self.expression()?);
+                            if self.same(&[TokenType::Rparen]) { break; }
                             self.eat(TokenType::Comma)?;
                         }
                         self.eat(TokenType::Rparen)?;
