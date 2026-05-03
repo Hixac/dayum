@@ -29,8 +29,8 @@ fn run(path: &str) -> Result<(), ()> {
     let mut parser = Parser::new(Scanner::new(&src).peekable());
     let stmts = parser.parse().unwrap();
     let mut type_checker = TypeChecker::new(&stmts);
-    type_checker.check().unwrap();
     println!("{:?}", stmts);
+    type_checker.check().unwrap();
 
     Ok(())
 }

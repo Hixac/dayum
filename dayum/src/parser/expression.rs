@@ -11,6 +11,8 @@ impl<'a, I: Iterator<Item = Token<'a>>> Parser<'a, I> {
     }
 
     fn expr_bp(&mut self, min_bp: u8) -> Result<Expr<'a>> {
+        use TokenType::*;
+
         let mut lhs = self.unary()?;
 
         loop {
@@ -24,25 +26,25 @@ impl<'a, I: Iterator<Item = Token<'a>>> Parser<'a, I> {
 
                 match toktype {
                     TokenType::Lparen => {
-                        self.eat(TokenType::Lparen)?;
+                        self.eat(Lparen)?;
                         let mut args: Vec<Expr<'a>> = Vec::new();
-                        if self.same(&[TokenType::Rparen]) {
-                            self.eat(TokenType::Rparen)?;
+                        if self.same(&[Rparen]) {
+                            self.eat(Rparen)?;
                             lhs = Expr::Call { identifier: Box::new(lhs), arguments: args };
                             continue;
                         }
                         loop {
                             args.push(self.expression()?);
-                            if self.same(&[TokenType::Rparen]) { break; }
-                            self.eat(TokenType::Comma)?;
+                            if self.same(&[Rparen]) { break; }
+                            self.eat(Comma)?;
                         }
-                        self.eat(TokenType::Rparen)?;
+                        self.eat(Rparen)?;
                         lhs = Expr::Call { identifier: Box::new(lhs), arguments: args }
                     },
-                    TokenType::Lbracket => {
-                        self.eat(TokenType::Lbracket)?;
+                    Lbracket => {
+                        self.eat(Lbracket)?;
                         let argument = Box::new(self.expression()?);
-                        self.eat(TokenType::Rbracket)?;
+                        self.eat(Rbracket)?;
                         lhs = Expr::Index { identifier: Box::new(lhs), argument }
                     }
                     _ => panic!("Wrong op")
@@ -59,8 +61,12 @@ impl<'a, I: Iterator<Item = Token<'a>>> Parser<'a, I> {
             let op = self.advance()?;
             let rhs = self.expr_bp(r_bp)?;
 
-            if matches!(op.token_type, TokenType::OpEqual) {
+            if matches!(op.token_type, OpEqual) {
                 lhs = Expr::Assignment { l: Box::new(lhs), op, r: Box::new(rhs) };
+                continue;
+            }
+            if matches!(op.token_type, OpLess | OpLessEqual | OpGreater | OpGreaterEqual) {
+                lhs = Expr::LogicalOp { l: Box::new(lhs), op, r: Box::new(rhs) };
                 continue;
             }
             lhs = Expr::BinaryOp { l: Box::new(lhs), op, r: Box::new(rhs) };
@@ -121,13 +127,18 @@ impl<'a, I: Iterator<Item = Token<'a>>> Parser<'a, I> {
 
     fn infix_binding_power(&self, tok: TokenType) -> Option<(u8, u8)> {
         match tok {
-            TokenType::OpPlus => Some((3, 4)),
-            TokenType::OpMinus => Some((3, 4)),
-            TokenType::OpStar => Some((5, 6)),
-            TokenType::OpSlash => Some((5, 6)),
+            TokenType::OpEqual => Some((2, 1)),
+
+            TokenType::OpLess | TokenType::OpLessEqual => Some((3, 4)),
+            TokenType::OpGreater | TokenType::OpGreaterEqual => Some((5, 6)),
+
             TokenType::OpLogAnd => Some((7, 8)),
             TokenType::OpLogOr => Some((9, 10)),
-            TokenType::OpEqual => Some((21, 20)),
+
+            TokenType::OpPlus => Some((20, 21)),
+            TokenType::OpMinus => Some((20, 21)),
+            TokenType::OpStar => Some((22, 23)),
+            TokenType::OpSlash => Some((22, 23)),
             _ => None,
         }
     }

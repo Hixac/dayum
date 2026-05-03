@@ -222,6 +222,8 @@ impl<'a, I: Iterator<Item = Token<'a>>> Parser<'a, I> {
 
         match token.token_type {
             KwIf => self.selection_statement(),
+            KwWhile => self.iteration_statement(),
+            KwFor => self.iteration_statement(),
             Lbrace => self.compound_statement(),
             KwReturn => {
                 self.eat(KwReturn)?;
@@ -237,6 +239,35 @@ impl<'a, I: Iterator<Item = Token<'a>>> Parser<'a, I> {
             }
             _ => self.expression_statement()
         }
+    }
+
+    fn iteration_statement(&mut self) -> Result<Stmt<'a>> {
+        if self.same(&[TokenType::KwFor]) {
+            self.eat(TokenType::KwFor)?;
+            self.eat(TokenType::Lparen)?;
+            let decl = Box::new({
+                if let Some(stmt) = self.declaration()? {
+                    stmt
+                } else {
+                    self.statement()?
+                }
+            });
+            let cond = self.expression()?;
+            self.eat(TokenType::Semicolon)?;
+            let incr = self.expression()?;
+            self.eat(TokenType::Rparen)?;
+            let body = Box::new(self.statement()?);
+
+            return Ok(Stmt::For { decl, cond, incr, body })
+        }
+
+        self.eat(TokenType::KwWhile)?;
+        self.eat(TokenType::Lparen)?;
+        let cond = self.expression()?;
+        self.eat(TokenType::Rparen)?;
+        let body = Box::new(self.statement()?);
+
+        Ok(Stmt::While { cond, body })
     }
 
     fn expression_statement(&mut self) -> Result<Stmt<'a>> {

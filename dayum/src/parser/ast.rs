@@ -52,6 +52,7 @@ pub enum Expr<'a> {
 
     UnaryOp{op: Token<'a>, val: Box<Expr<'a>>},
     BinaryOp{l: Box<Expr<'a>>, op: Token<'a>, r: Box<Expr<'a>> },
+    LogicalOp{l: Box<Expr<'a>>, op: Token<'a>, r: Box<Expr<'a>> },
     Assignment{l: Box<Expr<'a>>, op: Token<'a>, r: Box<Expr<'a>> },
 
     Group(Box<Expr<'a>>),
@@ -64,6 +65,17 @@ pub enum Stmt<'a> {
         stmt: Box<Stmt<'a>>,
         otherwise: Option<Box<Stmt<'a>>>
     },
+    While {
+        cond: Expr<'a>,
+        body: Box<Stmt<'a>>,
+    },
+    For {
+        decl: Box<Stmt<'a>>,
+        cond: Expr<'a>,
+        incr: Expr<'a>,
+        body: Box<Stmt<'a>>,
+    },
+
     Compound(Vec<Stmt<'a>>),
     Return(Option<Expr<'a>>),
 

@@ -7,6 +7,7 @@ const FILE_CASES: &[&str] = &[
     "function_definition.c",
     "global_variable.c",
     "if-statement.c",
+    "for-statement.c"
 ];
 
 #[test]

@@ -82,6 +82,7 @@ impl<'a> Scanner<'a> {
             "if" => Some(TokenType::KwIf),
             "else" => Some(TokenType::KwElse),
             "while" => Some(TokenType::KwWhile),
+            "for" => Some(TokenType::KwFor),
             "return" => Some(TokenType::KwReturn),
             "break" => Some(TokenType::KwBreak),
             "continue" => Some(TokenType::KwContinue),

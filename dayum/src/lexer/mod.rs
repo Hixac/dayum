@@ -19,6 +19,7 @@ pub enum TokenType {
     KwIf,
     KwElse,
     KwWhile,
+    KwFor,
     KwReturn,
     KwBreak,
     KwContinue,

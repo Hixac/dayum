@@ -156,6 +156,8 @@ impl<'a> TypeChecker<'a> {
                     self.statement(otherwise);
                 }
             },
+            Stmt::While {..} => {},
+            Stmt::For {..} => {},
             Stmt::Return(..) => { },
             Stmt::Compound(stmts) => {
                 for stmt in stmts {
@@ -236,6 +238,7 @@ impl<'a> TypeChecker<'a> {
                 }
                 l_type
             },
+            Expr::LogicalOp {..} => TypeSpec::Bool,
 
             Expr::Group(expr) => self.expression(expr),
         }
