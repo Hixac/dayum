@@ -34,11 +34,12 @@ impl<'a, I: Iterator<Item = Token<'a>>> Parser<'a, I> {
 
         if !is_fun && self.same(&[TokenType::OpEqual]) {
             self.eat(TokenType::OpEqual)?;
-            self.expression()?;
+            let expr = self.expression()?;
+            self.eat(TokenType::Semicolon)?;
             return Ok(Some(TopLevelStmt::GlobalVariable {
                 type_spec: TypeSpec::from_token(&type_spec),
                 decl: Decl::Identifier(identifier),
-                init: Some(self.expression()?)
+                init: Some(expr)
             }))
         }
 

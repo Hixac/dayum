@@ -38,6 +38,7 @@ impl<'a> TypeChecker<'a> {
 
     fn walk(&mut self) -> () {
         for stmt in self.ast {
+            self.top_level_statement(stmt);
         }
     }
 
@@ -101,6 +102,17 @@ impl<'a> TypeChecker<'a> {
             Decl::Pointer(pointer_decl)  => self.declaration(pointer_decl),
             Decl::Identifier(token) => {
                 Some(token.clone())
+            }
+        }
+    }
+
+    fn top_level_statement(&mut self, stmt: &TopLevelStmt<'a>) -> () {
+        match stmt {
+            TopLevelStmt::FunctionDefinition { type_spec, decl, params, body } => {
+
+            },
+            TopLevelStmt::GlobalVariable { type_spec, decl, init } => {
+
             }
         }
     }
