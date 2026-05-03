@@ -1,7 +1,7 @@
 use dayum::lexer::scan::Scanner;
 use dayum::lexer::TokenType;
 
-#[cfg(test)]
+#[test]
 fn it_works() {
     let mut scanner = Scanner::new("1 2.32 3 - == != \n>= // string \"string\" struct");
 
@@ -28,19 +28,19 @@ fn it_works() {
     let op_not_eq = scanner.next().unwrap();
     assert_eq!(op_not_eq.token_type, TokenType::OpNotEqual);
     assert_eq!(op_not_eq.lexeme, "!=");
-    assert_eq!(op_not_eq.line, 0);
+    assert_eq!(op_not_eq.line, 1);
 
     let greater_equal = scanner.next().unwrap();
     assert_eq!(greater_equal.token_type, TokenType::OpGreaterEqual);
     assert_eq!(greater_equal.lexeme, ">=");
-    assert_eq!(greater_equal.line, 1);
+    assert_eq!(greater_equal.line, 2);
 
     let slash_slash = scanner.next().unwrap();
     assert_eq!(slash_slash.token_type, TokenType::SlashSlash);
     assert_eq!(slash_slash.lexeme, "//");
 
     let identifier = scanner.next().unwrap();
-    assert_eq!(identifier.token_type, TokenType::Identifier);
+    assert_eq!(identifier.token_type, TokenType::KwString);
     assert_eq!(identifier.lexeme, "string");
 
     let string = scanner.next().unwrap();
@@ -50,9 +50,6 @@ fn it_works() {
     let kwstruct = scanner.next().unwrap();
     assert_eq!(kwstruct.token_type, TokenType::KwStruct);
     assert_eq!(kwstruct.lexeme, "struct");
-
-    let eof = scanner.next().unwrap();
-    assert_eq!(eof.token_type, TokenType::EndOfFile);
 
     let end = scanner.next();
     assert_eq!(end.is_none(), true);

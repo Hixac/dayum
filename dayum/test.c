@@ -1,4 +1,5 @@
 void function() {
-    string damn = 123;
-    damn = 123;
+    if (1 + 1) {
+
+    }
 }

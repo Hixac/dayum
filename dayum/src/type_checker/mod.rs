@@ -2,19 +2,26 @@ use anyhow::{Result, bail};
 use std::collections::{HashMap, VecDeque};
 
 use crate::lexer::Token;
-use crate::parser::ast::{Stmt, Decl, TypeSpec, Expr};
+use crate::parser::ast::{Decl, Expr, Stmt, TopLevelStmt, TypeSpec};
 
 
 pub struct TypeChecker<'a> {
-    ast: &'a Vec<Stmt<'a>>,
+    ast: &'a Vec<TopLevelStmt<'a>>,
     env: HashMap<Token<'a>, TypeSpec>,
+    funcs: HashMap<Token<'a>, Option<Vec<TypeSpec>>>,
     checklist: VecDeque<Token<'a>>,
     errors: Vec<String>
 }
 
 impl<'a> TypeChecker<'a> {
-    pub fn new(ast: &'a Vec<Stmt<'a>>) -> Self {
-        Self { ast, env: HashMap::new(), errors: Vec::new(), checklist: VecDeque::new() }
+    pub fn new(ast: &'a Vec<TopLevelStmt<'a>>) -> Self {
+        Self {
+            ast,
+            env: HashMap::new(),
+            errors: Vec::new(),
+            checklist: VecDeque::new(),
+            funcs: HashMap::new(),
+        }
     }
 
     pub fn check(&mut self) -> Result<()> {
@@ -31,7 +38,6 @@ impl<'a> TypeChecker<'a> {
 
     fn walk(&mut self) -> () {
         for stmt in self.ast {
-            self.statement(stmt);
         }
     }
 
@@ -39,7 +45,7 @@ impl<'a> TypeChecker<'a> {
         self.errors.push(msg);
     }
 
-    fn error_token(&mut self, at: Token<'a>, expected: TypeSpec, got: TypeSpec) -> () {
+    fn error_token(&mut self, at: &Token<'a>, expected: &TypeSpec, got: &TypeSpec) -> () {
         self.errors.push(format!("Expected {:?} got {:?} at {}", expected, got, at))
     }
 
@@ -47,31 +53,12 @@ impl<'a> TypeChecker<'a> {
         self.checklist.push_back(token);
     }
 
-    fn add(&mut self, token: &Token<'a>, type_spec: &TypeSpec) -> () {
+    fn add_var(&mut self, token: &Token<'a>, type_spec: &TypeSpec) -> () {
         if self.env.contains_key(&token) {
             self.error(format!("Key named {} is presented already!", token));
             return;
         }
         self.env.insert(token.clone(), type_spec.clone());
-    }
-
-    fn pop_same(&mut self, type_spec: TypeSpec) -> Option<Token<'a>> {
-        let Some(token) = self.checklist.pop_back() else {
-            self.error("Trying to pop_back empty checklist!".to_string());
-            return None;
-        };
-
-        if let Some(other_type_spec) = self.env.get(&token) {
-            if type_spec != *other_type_spec {
-                self.error_token(
-                    token.clone(),
-                    other_type_spec.clone(),
-                    type_spec.clone()
-                );
-            }
-        }
-
-        Some(token)
     }
 
     fn get_type(&mut self, token: &Token<'a>) -> Option<TypeSpec> {
@@ -83,22 +70,37 @@ impl<'a> TypeChecker<'a> {
         Some(type_spec.clone())
     }
 
-    fn declaration(&mut self, decl: &Decl<'a>, type_spec: &TypeSpec) -> bool {
+    fn add_func(&mut self, token: Token<'a>, params: Option<Vec<TypeSpec>>) -> () {
+        if self.funcs.contains_key(&token) {
+            self.error(format!("Function redefinition at {}", token));
+        }
+        self.funcs.insert(token, params);
+    }
+
+    fn validate_func(&mut self, token: Token<'a>, args: Option<Vec<TypeSpec>>) -> () {
+        let Some(params) = self.funcs.get(&token) else {
+            self.error(format!("Trying to call non-existing function at {}!", token));
+            return;
+        };
+
+        if *params != args {
+            self.error(format!("Wrong argument type at {}", token));
+        }
+    }
+
+    fn declaration(&mut self, decl: &Decl<'a>) -> Option<Token<'a>> {
         match decl {
-            Decl::Group(nested_decl) => self.declaration(nested_decl, type_spec),
-            Decl::Function { decl, params } => self.declaration(decl, type_spec),
-            Decl::Array { decl, constant } => self.declaration(decl, type_spec),
-            Decl::Pointer(pointer_decl)  => self.declaration(pointer_decl, type_spec),
-            Decl::Parameter(param_decl) => {
-                if let Some(decl) = param_decl {
-                    self.declaration(decl, type_spec);
-                }
-                false
+            Decl::Group(nested_decl) => self.declaration(nested_decl),
+            Decl::Function { decl, params } =>  {
+                let Some(token) = self.declaration(decl) else {
+                    return None
+                };
+                Some(token)
             }
+            Decl::Array { decl, constant } => self.declaration(decl),
+            Decl::Pointer(pointer_decl)  => self.declaration(pointer_decl),
             Decl::Identifier(token) => {
-                self.add(token, type_spec);
-                self.add_to_checklist(token.clone());
-                true
+                Some(token.clone())
             }
         }
     }
@@ -106,7 +108,8 @@ impl<'a> TypeChecker<'a> {
     fn statement(&mut self, stmt: &Stmt<'a>) -> () {
         match stmt {
             Stmt::If { cond, stmt, otherwise } => {
-                if let Some(type_spec) = self.expression(cond) {
+                if let Some(type_spec) = self.expression(cond) && 
+                    !matches!(type_spec, TypeSpec::Bool) {
                     self.error(format!("Expected bool got {:?} at if-statement", type_spec));
                 };
 
@@ -126,19 +129,7 @@ impl<'a> TypeChecker<'a> {
             Stmt::Expression(expr) => {
                 let _ = self.expression(expr);
             },
-            Stmt::Declarator(type_spec, decl, val) => {
-                if let Some(decl) = decl && self.declaration(decl, type_spec) {
-                    let Some(token) = self.pop_same(type_spec.clone()) else { return; };
-                    if let Some(val) = val {
-                        let Some(type_spec) = self.expression(val) else {
-                            return
-                        };
-
-                        self.add_to_checklist(token);
-                        let _ = self.pop_same(type_spec);
-                    }
-                }
-
+            Stmt::VarDecl{..} => {
             }
         }
     }
@@ -151,32 +142,39 @@ impl<'a> TypeChecker<'a> {
             Expr::StringLiteral(_) => Some(TypeSpec::String),
             Expr::Identifier(token) => self.get_type(token),
 
-            Expr::Call{..} => { todo!() },
-            Expr::Index{..} => { todo!() },
+            Expr::Call{identifier, arguments} => {
 
-            Expr::UnaryOp{..} => { todo!() },
+                self.expression(identifier)
+            },
+            Expr::Index{identifier, argument} => {
+                if let Some(arg) = self.expression(argument) &&
+                    !matches!(arg, TypeSpec::Int) {
+                    self.error(format!("Expected Int got {:?}", arg));
+                }
+                self.expression(identifier)
+            },
+
+            Expr::UnaryOp{op, val} => {
+                self.expression(val)
+            },
             Expr::BinaryOp{l, op, r} => {
                 let Some(type_spec_l) = self.expression(l) else { return None };
                 let Some(type_spec_r) = self.expression(r) else { return None };
 
                 if type_spec_l != type_spec_r {
                     self.error_token(
-                        op.clone(),
-                        type_spec_l,
-                        type_spec_r
+                        &op,
+                        &type_spec_l,
+                        &type_spec_r
                         );
                     return None
                 }
 
                 Some(type_spec_l)
             },
+            Expr::Assignment {..} => todo!(),
 
             Expr::Group(expr) => self.expression(expr),
-
-            Expr::Statement(stmt) => {
-                self.statement(stmt);
-                None
-            }
         }
     }
 

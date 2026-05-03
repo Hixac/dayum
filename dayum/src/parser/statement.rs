@@ -1,18 +1,74 @@
 use anyhow::{Result, bail};
 
-use super::ast::{Stmt, Decl, TypeSpec, Expr};
+use super::ast::{Stmt, Decl, TypeSpec, TopLevelStmt, Param};
 use super::Parser;
 use crate::{lexer::{Token, TokenType}};
 
 
 impl<'a, I: Iterator<Item = Token<'a>>> Parser<'a, I> {
-    pub(crate) fn external_declarations(&mut self) -> Result<Vec<Stmt<'a>>> {
-        let mut decls = Vec::new();
+    pub(crate) fn external_declarations(&mut self) -> Result<Vec<TopLevelStmt<'a>>> {
+        let mut stmts = Vec::new();
         loop {
-            let Some(decl) = self.declaration()? else { break; };
-            decls.push(decl);
+            let Some(stmt) = self.top_level_declaration()? else { break; };
+            stmts.push(stmt);
         }
-        Ok(decls)
+        Ok(stmts)
+    }
+
+    fn top_level_declaration(&mut self) -> Result<Option<TopLevelStmt<'a>>> {
+        let Some(_) = self.peek() else {
+            return Ok(None)
+        };
+
+        let type_spec = self.advance()?;
+        let identifier = self.advance()?;
+        let mut params: Vec<Param<'a>> = Vec::new();
+        let mut is_fun = false;
+
+        if self.same(&[TokenType::Lparen]) {
+            self.eat(TokenType::Lparen)?;
+            params = self.parameters()?;
+            self.eat(TokenType::Rparen)?;
+            is_fun = true;
+        }
+
+        if !is_fun && self.same(&[TokenType::OpEqual]) {
+            self.eat(TokenType::OpEqual)?;
+            self.expression()?;
+            return Ok(Some(TopLevelStmt::GlobalVariable {
+                type_spec: TypeSpec::from_token(&type_spec),
+                decl: Decl::Identifier(identifier),
+                init: Some(self.expression()?)
+            }))
+        }
+
+
+        if self.same(&[TokenType::Semicolon]) {
+            self.eat(TokenType::Semicolon)?;
+            if is_fun {
+                return Ok(Some(TopLevelStmt::GlobalVariable {
+                    type_spec: TypeSpec::from_token(&type_spec),
+                    decl: Decl::Identifier(identifier),
+                    init: None
+                }))
+            } else {
+                return Ok(Some(TopLevelStmt::FunctionDefinition {
+                    type_spec: TypeSpec::from_token(&type_spec),
+                    decl: Decl::Identifier(identifier),
+                    params,
+                    body: None
+                }))
+            }
+        }
+
+        let body = self.compound_statement()?;
+
+        Ok(Some(TopLevelStmt::FunctionDefinition {
+            type_spec: TypeSpec::from_token(&type_spec),
+            decl: Decl::Identifier(identifier),
+            params,
+            body: Some(body)
+        }))
     }
 
     fn declarator(&mut self) -> Result<Decl<'a>> {
@@ -59,7 +115,7 @@ impl<'a, I: Iterator<Item = Token<'a>>> Parser<'a, I> {
                 },
                 Lparen => {
                     self.eat(TokenType::Lparen)?;
-                    let mut params = None;
+                    let mut params = Vec::new();
                     if !self.same(&[TokenType::Rparen]) { params = self.parameters()?; }
                     self.eat(TokenType::Rparen)?;
 
@@ -81,8 +137,8 @@ impl<'a, I: Iterator<Item = Token<'a>>> Parser<'a, I> {
         })
     }
 
-    fn parameters(&mut self) -> Result<Option<Vec<Stmt<'a>>>> {
-        let mut params: Vec<Stmt<'a>> = Vec::new();
+    fn parameters(&mut self) -> Result<Vec<Param<'a>>> {
+        let mut params: Vec<Param<'a>> = Vec::new();
 
         loop {
             let Some(decl) = self.parameter_declaration()? else { break; };
@@ -91,31 +147,39 @@ impl<'a, I: Iterator<Item = Token<'a>>> Parser<'a, I> {
             self.eat(TokenType::Comma)?;
         }
         if params.len() == 0 {
-            return Ok(None)
+            return Ok(vec![])
         }
 
-        Ok(Some(params))
+        Ok(params)
     }
 
-    fn parameter_declaration(&mut self) -> Result<Option<Stmt<'a>>> {
+    fn parameter_declaration(&mut self) -> Result<Option<Param<'a>>> {
         let Some(type_spec) = self.declaration_specifier() else {
             return Ok(None)
         };
         if self.same(&[TokenType::Comma, TokenType::Rparen]) {
             return Ok(Some(
-                    Stmt::Declarator(TypeSpec::from_token(&type_spec), None, None)
+                    Param {
+                        type_spec: TypeSpec::from_token(&type_spec),
+                        decl: None,
+                        init: None
+                    }
             ))
         }
         let decl = Some(self.declarator()?);
 
-        let mut stmt = None;
+        let mut init = None;
         if self.same(&[TokenType::OpEqual]) {
             self.eat(TokenType::OpEqual)?;
-            stmt = Some(Box::new(self.expression()?));
+            init = Some(self.expression()?);
         }
 
         Ok(Some(
-                Stmt::Declarator(TypeSpec::from_token(&type_spec), decl, stmt)
+                Param {
+                    type_spec: TypeSpec::from_token(&type_spec),
+                    decl,
+                    init
+                }
         ))
     }
 
@@ -132,28 +196,19 @@ impl<'a, I: Iterator<Item = Token<'a>>> Parser<'a, I> {
             return Ok(None)
         };
         let decl = self.declarator()?;
-        if matches!(&decl, Decl::Function { .. }) {
-            return Ok(Some(self.function_definition(TypeSpec::from_token(&type_spec), decl)?))
-        }
 
-        let mut stmt = None;
+        let mut init = None;
         if self.same(&[TokenType::OpEqual]) {
             self.eat(TokenType::OpEqual)?;
-            stmt = Some(Box::new(self.expression()?));
+            init = Some(self.expression()?);
         }
         self.eat(TokenType::Semicolon)?;
 
         Ok(Some(
-                Stmt::Declarator(TypeSpec::from_token(&type_spec), Some(decl), stmt)
-        ))
-    }
-
-    fn function_definition(&mut self, type_spec: TypeSpec, decl: Decl<'a>) -> Result<Stmt<'a>> {
-        let stmt = self.compound_statement()?;
-        Ok(Stmt::Declarator(
-                type_spec, 
-                Some(decl),
-                Some(Box::new(Expr::Statement(Box::new(stmt))))
+                Stmt::VarDecl{
+                    type_spec: TypeSpec::from_token(&type_spec),
+                    decl, init
+                }
         ))
     }
 
@@ -169,9 +224,13 @@ impl<'a, I: Iterator<Item = Token<'a>>> Parser<'a, I> {
             Lbrace => self.compound_statement(),
             KwReturn => {
                 self.eat(KwReturn)?;
+                if self.same(&[TokenType::Semicolon]) {
+                    self.eat(TokenType::Semicolon)?;
+                    return Ok(Stmt::Return(None))
+                }
                 let expr = self.expression_statement()?;
                 match expr {  // is it okay to do that, huh?
-                    Stmt::Expression(expr) => Ok(Stmt::Return(expr)),
+                    Stmt::Expression(expr) => Ok(Stmt::Return(Some(expr))),
                     _ => unreachable!()
                 }
             }

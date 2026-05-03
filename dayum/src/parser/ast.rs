@@ -22,15 +22,20 @@ impl TypeSpec {
 }
 
 #[derive(Debug)]
+pub struct Param<'a> {
+    pub type_spec: TypeSpec,
+    pub decl: Option<Decl<'a>>,
+    pub init: Option<Expr<'a>>
+}
+
+#[derive(Debug)]
 pub enum Decl<'a> {
     Group(Box<Decl<'a>>),
-
     Pointer(Box<Decl<'a>>),
 
     Identifier(Token<'a>),
-    Parameter(Option<Box<Decl<'a>>>),
 
-    Function{decl: Box<Decl<'a>>, params: Option<Vec<Stmt<'a>>>},
+    Function{decl: Box<Decl<'a>>, params: Vec<Param<'a>>},
     Array{decl: Box<Decl<'a>>, constant: Option<Expr<'a>>},
 }
 
@@ -47,18 +52,41 @@ pub enum Expr<'a> {
 
     UnaryOp{op: Token<'a>, val: Box<Expr<'a>>},
     BinaryOp{l: Box<Expr<'a>>, op: Token<'a>, r: Box<Expr<'a>> },
+    Assignment{l: Box<Expr<'a>>, op: Token<'a>, r: Box<Expr<'a>> },
 
     Group(Box<Expr<'a>>),
-
-    Statement(Box<Stmt<'a>>)
 }
 
 #[derive(Debug)]
 pub enum Stmt<'a> {
-    If{cond: Expr<'a>, stmt: Box<Stmt<'a>>, otherwise: Option<Box<Stmt<'a>>>},
+    If { 
+        cond: Expr<'a>,
+        stmt: Box<Stmt<'a>>,
+        otherwise: Option<Box<Stmt<'a>>>
+    },
     Compound(Vec<Stmt<'a>>),
-    Return(Expr<'a>),
+    Return(Option<Expr<'a>>),
 
     Expression(Expr<'a>),
-    Declarator(TypeSpec, Option<Decl<'a>>, Option<Box<Expr<'a>>>)
+    VarDecl {
+        type_spec: TypeSpec,
+        decl: Decl<'a>,
+        init: Option<Expr<'a>>
+    }
+}
+
+#[derive(Debug)]
+pub enum TopLevelStmt<'a> {
+    FunctionDefinition {
+        type_spec: TypeSpec,
+        decl: Decl<'a>,
+        params: Vec<Param<'a>>,
+        body: Option<Stmt<'a>>
+    },
+
+    GlobalVariable {
+        type_spec: TypeSpec,
+        decl: Decl<'a>,
+        init: Option<Expr<'a>>
+    }
 }

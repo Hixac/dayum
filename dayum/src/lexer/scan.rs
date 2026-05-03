@@ -164,14 +164,6 @@ impl<'a> Scanner<'a> {
             _ => None
         }
     }
-
-    fn eof(&mut self) -> Option<Token<'a>> {
-        if self.is_eofed {
-            return None
-        }
-        self.is_eofed = true;
-        Some(self.make_token(TokenType::EndOfFile, self.pos))
-    }
 }
 
 impl<'a> Iterator for Scanner<'a> {
@@ -181,7 +173,7 @@ impl<'a> Iterator for Scanner<'a> {
         self.skip_whitespaces();
 
         if self.pos == self.source.len() {
-            return self.eof()
+            return None
         }
 
         let start = self.pos;

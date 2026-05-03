@@ -2,8 +2,7 @@ use std::iter::Peekable;
 use log::info;
 use anyhow::{Result, bail};
 
-use crate::lexer::{Token, TokenType};
-use ast::Stmt;
+use crate::{lexer::{Token, TokenType}, parser::ast::TopLevelStmt};
 
 pub mod ast;
 mod expression;
@@ -19,7 +18,7 @@ impl<'a, I: Iterator<Item = Token<'a>>> Parser<'a, I> {
         Self { tokens }
     }
 
-    pub fn parse(&mut self) -> Result<Vec<Stmt<'a>>> {
+    pub fn parse(&mut self) -> Result<Vec<TopLevelStmt<'a>>> {
         self.external_declarations()
     }
 
