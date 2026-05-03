@@ -27,8 +27,8 @@ impl<'a, I: Iterator<Item = Token<'a>>> Parser<'a, I> {
                         self.eat(TokenType::Lparen)?;
                         let mut args: Vec<Expr<'a>> = Vec::new();
                         loop {
-                            args.push(self.expression()?);
                             if self.same(&[TokenType::Rparen]) { break; }
+                            args.push(self.expression()?);
                             self.eat(TokenType::Comma)?;
                         }
                         self.eat(TokenType::Rparen)?;
@@ -53,6 +53,11 @@ impl<'a, I: Iterator<Item = Token<'a>>> Parser<'a, I> {
 
             let op = self.advance()?;
             let rhs = self.expr_bp(r_bp)?;
+
+            if matches!(op.token_type, TokenType::OpEqual) {
+                lhs = Expr::Assignment { l: Box::new(lhs), op, r: Box::new(rhs) };
+                continue;
+            }
             lhs = Expr::BinaryOp { l: Box::new(lhs), op, r: Box::new(rhs) };
         }
 

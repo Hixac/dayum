@@ -46,7 +46,7 @@ impl<'a, I: Iterator<Item = Token<'a>>> Parser<'a, I> {
 
         if self.same(&[TokenType::Semicolon]) {
             self.eat(TokenType::Semicolon)?;
-            if is_fun {
+            if !is_fun {
                 return Ok(Some(TopLevelStmt::GlobalVariable {
                     type_spec: TypeSpec::from_token(&type_spec),
                     decl: Decl::Identifier(identifier),

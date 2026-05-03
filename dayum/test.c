@@ -1,1 +1,7 @@
-int global_var = 1 + 1;
+int function() {
+    return 1 + 1;
+}
+
+void other() {
+    string var = function();
+}

@@ -21,14 +21,14 @@ impl TypeSpec {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct Param<'a> {
     pub type_spec: TypeSpec,
     pub decl: Option<Decl<'a>>,
     pub init: Option<Expr<'a>>
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum Decl<'a> {
     Group(Box<Decl<'a>>),
     Pointer(Box<Decl<'a>>),
@@ -39,7 +39,7 @@ pub enum Decl<'a> {
     Array{decl: Box<Decl<'a>>, constant: Option<Expr<'a>>},
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum Expr<'a> {
     IntLiteral(i32),
     FloatLiteral(f32),
@@ -57,7 +57,7 @@ pub enum Expr<'a> {
     Group(Box<Expr<'a>>),
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum Stmt<'a> {
     If { 
         cond: Expr<'a>,
@@ -75,7 +75,7 @@ pub enum Stmt<'a> {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum TopLevelStmt<'a> {
     FunctionDefinition {
         type_spec: TypeSpec,
