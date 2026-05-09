@@ -2,7 +2,20 @@ use std::iter::Peekable;
 use log::info;
 use anyhow::{Result, bail};
 
-use crate::{lexer::{Token, TokenType}, parser::ast::TopLevelStmt};
+use crate::{
+    lexer::{Token, TokenType},
+    parser::ast::{
+        Decl,
+        DeclKind,
+        Expr,
+        ExprKind,
+        Stmt,
+        StmtKind,
+        TopLevelStmt,
+        TopLevelStmtKind
+    }, 
+    type_checker::annotation::TypeID
+};
 
 pub mod ast;
 mod expression;
@@ -11,11 +24,12 @@ mod statement;
 
 pub struct Parser<'a, I: Iterator<Item = Token<'a>>> {
     tokens: Peekable<I>,
+    offset: usize
 }
 
 impl<'a, I: Iterator<Item = Token<'a>>> Parser<'a, I> {
     pub fn new(tokens: Peekable<I>) -> Self {
-        Self { tokens }
+        Self { tokens, offset: 0 }
     }
 
     pub fn parse(&mut self) -> Result<Vec<TopLevelStmt<'a>>> {
@@ -45,15 +59,14 @@ impl<'a, I: Iterator<Item = Token<'a>>> Parser<'a, I> {
         t.contains(&token.token_type)
     }
 
-    fn eat(&mut self, t: TokenType) -> Result<()> {
+    fn eat(&mut self, t: TokenType) -> Result<Token<'a>> {
         let Some(token) = self.peek() else {
             bail!("Not found any token. EOF")
         };
 
         if token.token_type == t {
             info!("Ate {:?}", t);
-            self.advance()?;
-            return Ok(())
+            return Ok(self.advance()?)
         }
 
         bail!("Not found {:?} at {:?}", t, token)
@@ -65,5 +78,39 @@ impl<'a, I: Iterator<Item = Token<'a>>> Parser<'a, I> {
             return true;
         }
         false
+    }
+
+    fn type_id(&mut self) -> TypeID {
+        let id = TypeID(self.offset);
+        self.offset += 1;
+        id
+    }
+
+    fn tlstmt(&mut self, kind: TopLevelStmtKind<'a>) -> TopLevelStmt<'a> {
+        TopLevelStmt {
+            kind,
+            id: self.type_id()
+        }
+    }
+
+    fn stmt(&mut self, kind: StmtKind<'a>) -> Stmt<'a> {
+        Stmt {
+            kind,
+            id: self.type_id()
+        }
+    }
+
+    fn expr(&mut self, kind: ExprKind<'a>) -> Expr<'a> {
+        Expr {
+            kind,
+            id: self.type_id()
+        }
+    }
+
+    fn decl(&mut self, kind: DeclKind<'a>) -> Decl<'a> {
+        Decl {
+            kind,
+            id: self.type_id()
+        }
     }
 }

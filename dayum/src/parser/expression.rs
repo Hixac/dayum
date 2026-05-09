@@ -1,6 +1,6 @@
 use anyhow::{Result, bail};
 
-use super::ast::Expr;
+use super::ast::{Expr, ExprKind};
 use super::Parser;
 use crate::lexer::{Token, TokenType};
 
@@ -30,7 +30,7 @@ impl<'a, I: Iterator<Item = Token<'a>>> Parser<'a, I> {
                         let mut args: Vec<Expr<'a>> = Vec::new();
                         if self.same(&[Rparen]) {
                             self.eat(Rparen)?;
-                            lhs = Expr::Call { identifier: Box::new(lhs), arguments: args };
+                            lhs = self.expr(ExprKind::Call { identifier: Box::new(lhs), arguments: args });
                             continue;
                         }
                         loop {
@@ -39,13 +39,13 @@ impl<'a, I: Iterator<Item = Token<'a>>> Parser<'a, I> {
                             self.eat(Comma)?;
                         }
                         self.eat(Rparen)?;
-                        lhs = Expr::Call { identifier: Box::new(lhs), arguments: args }
+                        lhs = self.expr(ExprKind::Call { identifier: Box::new(lhs), arguments: args });
                     },
                     Lbracket => {
                         self.eat(Lbracket)?;
                         let argument = Box::new(self.expression()?);
                         self.eat(Rbracket)?;
-                        lhs = Expr::Index { identifier: Box::new(lhs), argument }
+                        lhs = self.expr(ExprKind::Index { identifier: Box::new(lhs), argument });
                     }
                     _ => panic!("Wrong op")
                 }
@@ -62,14 +62,14 @@ impl<'a, I: Iterator<Item = Token<'a>>> Parser<'a, I> {
             let rhs = self.expr_bp(r_bp)?;
 
             if matches!(op.token_type, OpEqual) {
-                lhs = Expr::Assignment { l: Box::new(lhs), op, r: Box::new(rhs) };
+                lhs = self.expr(ExprKind::Assignment { l: Box::new(lhs), op, r: Box::new(rhs) });
                 continue;
             }
             if matches!(op.token_type, OpLess | OpLessEqual | OpGreater | OpGreaterEqual) {
-                lhs = Expr::LogicalOp { l: Box::new(lhs), op, r: Box::new(rhs) };
+                lhs = self.expr(ExprKind::LogicalOp { l: Box::new(lhs), op, r: Box::new(rhs) });
                 continue;
             }
-            lhs = Expr::BinaryOp { l: Box::new(lhs), op, r: Box::new(rhs) };
+            lhs = self.expr(ExprKind::BinaryOp { l: Box::new(lhs), op, r: Box::new(rhs) });
         }
 
         Ok(lhs)
@@ -84,7 +84,7 @@ impl<'a, I: Iterator<Item = Token<'a>>> Parser<'a, I> {
             TokenType::OpExclaim => {
                 let token = self.advance()?;
                 let val = self.expr_bp(15)?;
-                Ok(Expr::UnaryOp { op: token, val: Box::new(val) })
+                Ok(self.expr(ExprKind::UnaryOp { op: token, val: Box::new(val) }))
             },
             _ => Ok(self.primary()?),
         }
@@ -94,24 +94,29 @@ impl<'a, I: Iterator<Item = Token<'a>>> Parser<'a, I> {
         let t = self.advance()?;
         match t.token_type {
             TokenType::StringLiteral => {
-                Ok(Expr::StringLiteral(t.lexeme.trim_matches('"')))
+                let parsed = t.lexeme.trim_matches('"');
+                Ok(self.expr(ExprKind::StringLiteral{debug: t, val: parsed}))
             }
             TokenType::IntegerLiteral => {
-                Ok(Expr::IntLiteral(t.lexeme.parse().unwrap()))
+                let parsed = t.lexeme.parse().unwrap();
+                Ok(self.expr(ExprKind::IntLiteral{debug: t, val: parsed}))
             }
             TokenType::FloatLiteral => {
-                Ok(Expr::FloatLiteral(t.lexeme.parse().unwrap()))
+                let parsed = t.lexeme.parse().unwrap();
+                Ok(self.expr(ExprKind::FloatLiteral{debug: t, val: parsed}))
             }
             TokenType::KwTrue | TokenType::KwFalse => {
-                Ok(Expr::BoolLiteral(t.lexeme.parse().unwrap()))
+                let parsed = t.lexeme.parse().unwrap();
+                Ok(self.expr(ExprKind::BoolLiteral{debug: t, val: parsed}))
             }
             TokenType::Lparen => {
-                let group = Ok(Expr::Group(Box::new(self.expression()?)));
+                let kind = ExprKind::Group(Box::new(self.expression()?));
+                let group = Ok(self.expr(kind));
                 self.eat(TokenType::Rparen)?;
                 group
             }
             TokenType::Identifier => {
-                Ok(Expr::Identifier(t))
+                Ok(self.expr(ExprKind::Identifier(t)))
             }
             _ => bail!("Token fail on primary grammar. Caused token: {:?}", t)
         }

@@ -5,18 +5,19 @@ use log::{error, info};
 pub struct Scanner<'a> {
     source: &'a str,
     pos: usize,
+    rel_pos: usize,
     line: u16,
-    is_eofed: bool
 }
 
 
 impl<'a> Scanner<'a> {
     pub fn new(source: &'a str) -> Self {
-        Self { source, pos: 0, line: 1, is_eofed: false }
+        Self { source, pos: 0, rel_pos: 1, line: 1 }
     }
 
     fn next_char(&mut self) -> Option<char> {
         self.pos += 1;
+        self.rel_pos += 1;
         self.source.chars().nth(self.pos - 1)
     }
 
@@ -24,19 +25,24 @@ impl<'a> Scanner<'a> {
         self.source.chars().nth(self.pos)
     }
 
+    fn next_line(&mut self) -> () {
+        self.line += 1;
+        self.rel_pos = 0;
+    }
+
     fn skip_whitespaces(&mut self) {
         while let Some(c) = self.peek() {
             match c {
                 ' ' | '\r' | '\t' => {},
-                '\n' => self.line += 1,
+                '\n' => self.next_line(),
                 _ => return
             }
             self.next_char().unwrap();
         }
     }
 
-    fn make_token(&self, token_type: TokenType, start: usize) -> Token<'a> {
-        let token = Token { pos: start, line: self.line, token_type, lexeme: &self.source[start..self.pos] };
+    fn make_token(&self, token_type: TokenType, start: usize, rel_pos: usize) -> Token<'a> {
+        let token = Token { pos: rel_pos, line: self.line, token_type, lexeme: &self.source[start..self.pos] };
         info!("{}", token);
         token
     }
@@ -178,24 +184,25 @@ impl<'a> Iterator for Scanner<'a> {
         }
 
         let start = self.pos;
+        let rel_pos = self.rel_pos;
         let c = self.next_char()?;
 
         if c.is_numeric() {
             let token_type = self.scan_number()?;
-            return Some(self.make_token(token_type, start));
+            return Some(self.make_token(token_type, start, rel_pos));
         }
 
         if c.is_alphabetic() {
             let token_type = self.scan_identifier(start)?;
-            return Some(self.make_token(token_type, start));
+            return Some(self.make_token(token_type, start, rel_pos));
         }
 
         if c == '"' {
             let token_type = self.scan_string()?;
-            return Some(self.make_token(token_type, start));
+            return Some(self.make_token(token_type, start, rel_pos));
         }
 
         let token_type = self.scan_symbol(c)?;
-        return Some(self.make_token(token_type, start));
+        return Some(self.make_token(token_type, start, rel_pos));
     }
 }

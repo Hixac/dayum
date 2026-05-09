@@ -3,6 +3,7 @@ use dayum::{
     lexer::scan::Scanner,
     parser::Parser,
     type_checker::TypeChecker,
+    compiler::Compiler,
 };
 use std::{env, fs};
 
@@ -28,9 +29,11 @@ fn run(path: &str) -> Result<(), ()> {
 
     let mut parser = Parser::new(Scanner::new(&src).peekable());
     let stmts = parser.parse().unwrap();
-    let mut type_checker = TypeChecker::new(&stmts);
+    let mut type_checker = TypeChecker::new();
     println!("{:?}", stmts);
-    type_checker.check().unwrap();
+    type_checker.check(&stmts).unwrap();
+    let mut compiler = Compiler::new();
+    compiler.compile(stmts);
 
     Ok(())
 }

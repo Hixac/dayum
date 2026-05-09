@@ -1,50 +1,24 @@
-use crate::lexer::{Token, TokenType};
+use crate::lexer::Token;
+use crate::type_checker::annotation::TypeID;
 
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum TypeSpec {
-    Int, Float, Char, String, Void, Bool
-}
 
-impl TypeSpec {
-    pub fn from_token<'a>(token: &Token<'a>) -> Self {
-        use TokenType::*; use TypeSpec::*;
-
-        match token.token_type {
-            KwInt => Int,
-            KwFloat => Float,
-            KwChar => Char,
-            KwString => String,
-            KwVoid => Void,
-            KwBool => Bool,
-            _ => panic!("Wrong type")
-        }
-    }
-}
-
-#[derive(Debug, PartialEq)]
-pub struct Param<'a> {
-    pub type_spec: TypeSpec,
-    pub decl: Option<Decl<'a>>,
-    pub init: Option<Expr<'a>>
-}
-
-#[derive(Debug, PartialEq)]
-pub enum Decl<'a> {
+#[derive(Debug)]
+pub enum DeclKind<'a> {
     Group(Box<Decl<'a>>),
     Pointer(Box<Decl<'a>>),
 
     Identifier(Token<'a>),
 
     Function{decl: Box<Decl<'a>>, params: Vec<Param<'a>>},
-    Array{decl: Box<Decl<'a>>, constant: Option<Expr<'a>>},
+    Array{decl: Box<Decl<'a>>, constant: Option<Token<'a>>},
 }
 
-#[derive(Debug, PartialEq)]
-pub enum Expr<'a> {
-    IntLiteral(i32),
-    FloatLiteral(f32),
-    BoolLiteral(bool),
-    StringLiteral(&'a str),
+#[derive(Debug)]
+pub enum ExprKind<'a> {
+    IntLiteral{debug: Token<'a>, val: i32},
+    FloatLiteral{debug: Token<'a>, val: f32},
+    BoolLiteral{debug: Token<'a>, val: bool},
+    StringLiteral{debug: Token<'a>, val: &'a str},
     Identifier(Token<'a>),
 
     Call{identifier: Box<Expr<'a>>, arguments: Vec<Expr<'a>>},
@@ -58,18 +32,21 @@ pub enum Expr<'a> {
     Group(Box<Expr<'a>>),
 }
 
-#[derive(Debug, PartialEq)]
-pub enum Stmt<'a> {
+#[derive(Debug)]
+pub enum StmtKind<'a> {
     If { 
+        debug: Token<'a>,
         cond: Expr<'a>,
         stmt: Box<Stmt<'a>>,
         otherwise: Option<Box<Stmt<'a>>>
     },
     While {
+        debug: Token<'a>,
         cond: Expr<'a>,
         body: Box<Stmt<'a>>,
     },
     For {
+        debug: Token<'a>,
         decl: Box<Stmt<'a>>,
         cond: Expr<'a>,
         incr: Expr<'a>,
@@ -77,28 +54,60 @@ pub enum Stmt<'a> {
     },
 
     Compound(Vec<Stmt<'a>>),
-    Return(Option<Expr<'a>>),
+    Return{debug: Token<'a>, expr: Option<Expr<'a>>},
 
     Expression(Expr<'a>),
     VarDecl {
-        type_spec: TypeSpec,
+        type_spec: Token<'a>,
         decl: Decl<'a>,
         init: Option<Expr<'a>>
     }
 }
 
-#[derive(Debug, PartialEq)]
-pub enum TopLevelStmt<'a> {
+#[derive(Debug)]
+pub enum TopLevelStmtKind<'a> {
     FunctionDefinition {
-        type_spec: TypeSpec,
+        type_spec: Token<'a>,
         decl: Decl<'a>,
         params: Vec<Param<'a>>,
         body: Option<Stmt<'a>>
     },
 
     GlobalVariable {
-        type_spec: TypeSpec,
+        type_spec: Token<'a>,
         decl: Decl<'a>,
         init: Option<Expr<'a>>
     }
+}
+
+#[derive(Debug)]
+pub struct TopLevelStmt<'a> {
+    pub kind: TopLevelStmtKind<'a>,
+    pub id: TypeID
+}
+
+#[derive(Debug)]
+pub struct Stmt<'a> {
+    pub kind: StmtKind<'a>,
+    pub id: TypeID
+}
+
+#[derive(Debug)]
+pub struct Expr<'a> {
+    pub kind: ExprKind<'a>,
+    pub id: TypeID
+}
+
+#[derive(Debug)]
+pub struct Decl<'a> {
+    pub kind: DeclKind<'a>,
+    pub id: TypeID,
+}
+
+#[derive(Debug)]
+pub struct Param<'a> {
+    pub type_spec: Token<'a>,
+    pub decl: Option<Decl<'a>>,
+    pub init: Option<Expr<'a>>,
+    pub id: TypeID,
 }

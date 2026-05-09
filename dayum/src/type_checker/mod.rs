@@ -1,252 +1,489 @@
-use anyhow::{Result, bail};
 use std::collections::HashMap;
 
+use anyhow::{Result, bail};
+
 use crate::lexer::Token;
-use crate::parser::ast::{Decl, Expr, Stmt, TopLevelStmt, TypeSpec, Param};
+use crate::parser::ast::{
+    Expr,
+    ExprKind,
+    Decl,
+    DeclKind,
+    Param,
+    Stmt,
+    StmtKind,
+    TopLevelStmt,
+    TopLevelStmtKind
+};
+
+use annotation::{Type, TypeID, PrimaryEnum};
+pub mod annotation;
 
 
-pub struct TypeChecker<'a> {
-    ast: &'a Vec<TopLevelStmt<'a>>,
-    env: HashMap<Token<'a>, TypeSpec>,
-    funcs: HashMap<Token<'a>, Vec<TypeSpec>>,
+pub struct TypeChecker {
+    pub type_map: HashMap<TypeID, Type>,
+    pub var_map: HashMap<String, (TypeID, usize)>,
+    debug: HashMap<TypeID, (u16, usize)>,
+    last_func_def: Option<Type>,
     errors: Vec<String>,
-    last_token: Option<Token<'a>>
+    depth: usize
 }
 
-impl<'a> TypeChecker<'a> {
-    pub fn new(ast: &'a Vec<TopLevelStmt<'a>>) -> Self {
+impl<'a> TypeChecker {
+    pub fn new() -> Self {
         Self {
-            ast,
-            env: HashMap::new(),
+            type_map: HashMap::new(),
+            var_map: HashMap::new(),
+            debug: HashMap::new(),
+            last_func_def: None,
             errors: Vec::new(),
-            funcs: HashMap::new(),
-            last_token: None
+            depth: 0
         }
     }
 
-    pub fn check(&mut self) -> Result<()> {
-        self.walk();
+    pub fn check(&mut self, stmts: &Vec<TopLevelStmt<'a>>) -> Result<()> {
+        for stmt in stmts {
+            self.top_level_stmt(stmt);
+        }
 
         if self.errors.len() > 0 {
             println!("List of errors:");
-            self.print_errors();
-            bail!("Got errors!");
+            for err in &self.errors {
+                println!("{}", err);
+            }
+            bail!("Errors are present");
         }
 
         Ok(())
     }
 
-    fn walk(&mut self) -> () {
-        for stmt in self.ast {
-            self.top_level_statement(stmt);
+    fn debug_info(&mut self, id: TypeID, token: &Token<'a>) {
+        self.debug.insert(id, (token.line, token.pos));
+    }
+
+    fn error(&mut self, context: &TypeID, msg: &str) {
+        let Some(info) = self.debug.get(&context) else {
+            println!("No context available!");
+            return;
+        };
+        self.errors.push(
+            format!("{} in line {} at {} position", msg, info.0, info.1)
+        );
+    }
+
+    fn error_two_contexts(&mut self, con1: &TypeID, con2: &TypeID, msg: &str) {
+        let Some(con1) = self.debug.get(&con1) else {
+            println!("No context available!");
+            return;
+        };
+        let Some(con2) = self.debug.get(&con2) else {
+            println!("No context available!");
+            return;
+        };
+
+        self.errors.push(
+            format!(
+                "{} in line {} at {} position for more context look at line {} at {} position",
+                msg, con1.0, con1.1, con2.0, con2.1
+            )
+        );
+    }
+
+    fn error_token(&mut self, context: &Token<'a>, msg: &str) {
+        self.errors.push(
+            format!("{} in line {} at {} position", msg, context.line, context.pos)
+        );
+    }
+
+    fn error_unary(&mut self, op: &Token<'a>, val: &TypeID) {
+        let Some(val) = self.type_map.get(val) else {
+            println!("No context available!");
+            return;
+        };
+
+        self.errors.push(
+            format!("Expected bool when using not operation ({} {:?}) in line {} at {} position", 
+                op.lexeme, val, op.line, op.pos
+            )
+        );
+    }
+
+    fn error_binary(&mut self, l: &TypeID, op: &Token<'a>, r: &TypeID) {
+        let Some(l) = self.type_map.get(l) else {
+            println!("No context available!");
+            return;
+        };
+        let Some(r) = self.type_map.get(r) else {
+            println!("No context available!");
+            return;
+        };
+
+        self.errors.push(
+            format!("Different types on binary operation ({:?} {} {:?}) in line {} at {} position", 
+                l, op.lexeme, r, op.line, op.pos
+            )
+        );
+    }
+
+    fn function_definition(&mut self, return_type: Type, params: &Vec<Param<'a>>, type_id: TypeID, identifier: String) {
+        if self.var_map.contains_key(&identifier) {
+            self.error(&type_id, "Function redefinition is not allowed");
+            return;
         }
-    }
 
-    fn error(&mut self, msg: String) -> () {
-        self.errors.push(msg);
-    }
-
-    fn error_token(&mut self, at: &Token<'a>, expected: &TypeSpec, got: &TypeSpec) -> () {
-        self.errors.push(format!("Expected {:?} got {:?} at {}", expected, got, at))
-    }
-
-    fn convert_to_types_params(&self, params: &Vec<Param<'a>>) -> Vec<TypeSpec> {
         let mut types = Vec::new();
-        for param in params {
-            types.push(param.type_spec.clone())
+        self.depth += 1;  // artificially adding depth 'cause of function scope
+        for param in params {  // TODO: add recursive typing
+            if let Some(decl) = &param.decl {
+                let (id, identifier) = self.declaration(decl, &param.type_spec);
+                self.variable_definition(&param.type_spec, &param.init, id, identifier);
+            };
+            types.push(Type::primitive(&param.type_spec));
         }
-        types
+        self.depth -= 1;
+
+        self.var_map.insert(identifier, (type_id.clone(), self.depth));
+        self.type_map.insert(type_id, Type::Function(Box::new(return_type), types));
     }
 
-    fn convert_to_types_args(&mut self, args: &Vec<Expr<'a>>) -> Vec<TypeSpec> {
-        let mut types = Vec::new();
+    fn parameters_compare(&mut self, identifier_id: TypeID, args: &Vec<Expr<'a>>) {
+        let mut ids = Vec::new();
         for arg in args {
-            types.push(self.expression(arg))
+            let arg_id = self.expression(arg);
+            ids.push(arg_id);
         }
-        types
-    }
 
-    fn add_var(&mut self, token: Token<'a>, type_spec: &TypeSpec) -> () {
-        if self.env.contains_key(&token) {
-            self.error(format!("Key named {} is presented already!", token));
-            return;
-        }
-        self.env.insert(token, type_spec.clone());
-    }
-
-    fn get_type(&mut self, token: &Token<'a>) -> TypeSpec {
-        let Some(type_spec) = self.env.get(token) else {
-            self.error(format!("Token not in type system! That token: {}", token));
-            panic!("")
-        };
-
-        type_spec.clone()
-    }
-
-    fn add_func(&mut self, token: Token<'a>, params: Vec<TypeSpec>) -> () {
-        if self.funcs.contains_key(&token) {
-            self.error(format!("Function redefinition at {}", token));
-        }
-        self.funcs.insert(token, params);
-    }
-
-    fn validate_func(&mut self, token: Token<'a>, args: Vec<TypeSpec>) -> () {
-        let Some(params) = self.funcs.get(&token) else {
-            self.error(format!("Trying to call non-existing function at {}!", token));
-            return;
-        };
-
-        if *params != args {
-            self.error(format!("Wrong argument type at {}", token));
-        }
-    }
-
-    fn declaration(&mut self, decl: &Decl<'a>) -> Option<Token<'a>> {
-        match decl {
-            Decl::Group(nested_decl) => self.declaration(nested_decl),
-            Decl::Function { decl, params } =>  {
-                let Some(token) = self.declaration(decl) else {
-                    return None
-                };
-                Some(token)
+        let params = {
+            let Some(func_type) = self.type_map.get(&identifier_id) else { unreachable!() };
+            match func_type {
+                Type::Function(_, params) => {
+                    params.clone()
+                },
+                _ => unreachable!()
             }
-            Decl::Array { decl, constant } => self.declaration(decl),
-            Decl::Pointer(pointer_decl)  => self.declaration(pointer_decl),
-            Decl::Identifier(token) => {
-                Some(token.clone())
+        };
+
+        if args.len() != params.len() {
+            self.error(&identifier_id, "Wrong number of arguments!");
+        }
+
+        for (idx, arg_id) in ids.iter().enumerate() {
+            let Some(arg_type) = self.type_map.get(&arg_id) else { unreachable!() };
+            if !params[idx].equal(arg_type) {
+                self.error_two_contexts(
+                    arg_id,
+                    &identifier_id,
+                    format!("Expected {:?} parameter type got {:?} argument type", params[idx], arg_type).as_str()
+                );
             }
         }
     }
 
-    fn top_level_statement(&mut self, stmt: &TopLevelStmt<'a>) -> () {
-        match stmt {
-            TopLevelStmt::FunctionDefinition { type_spec, decl, params, body } => {
-                let token = self.declaration(decl).expect("Impossible situation");
-                self.add_var(token.clone(), type_spec);
-                self.add_func(token, self.convert_to_types_params(params));
+    fn array_definition(&mut self, spec: Type, constant: &Option<Token<'a>>, type_id: TypeID) {
+        let mut constant_value = None;
+
+        if let Some(constant) = constant {
+            match constant.lexeme.parse::<usize>() {
+                Ok(v) => {
+                    constant_value = Some(v);
+                }
+                Err(e) => {
+                    self.error_token(
+                        &constant, 
+                        format!("Got wrong type as constant in array definition while expecting int: {}", e).as_str()
+                    );
+                    constant_value = None;
+                }
+            }
+        }
+
+        self.type_map.insert(type_id, Type::Array(Box::new(spec), constant_value));
+    }
+
+    fn variable_definition(&mut self, type_spec: &Token<'a>, init: &Option<Expr<'a>>, type_id: TypeID, identifier: String) {
+        if self.var_map.contains_key(&identifier) {
+            self.error(&type_id, "Variable shadowing are not allowed");
+            return;
+        }
+
+        let var_type = Type::primitive(type_spec);
+
+        if let Some(init) = init {
+            let init_id = self.expression(init);
+            if let Some(init_type) = self.type_map.get(&init_id) {
+                if !var_type.equal(init_type) {
+                    self.error_token(
+                        type_spec,
+                        format!("Expected {:?} got {:?} while variable defining", var_type, init_type).as_str(), 
+                    );
+                }
+            }
+        }
+
+        self.var_map.insert(identifier, (type_id.clone(), self.depth));
+        self.type_map.insert(type_id, var_type);
+    }
+
+    fn top_level_stmt(&mut self, stmt: &TopLevelStmt<'a>) {
+        use TopLevelStmtKind::*;
+        match &stmt.kind {
+            GlobalVariable { type_spec, decl, init } => {
+                let (type_id, identifier) = self.declaration(decl, type_spec);
+                self.variable_definition(type_spec, init, type_id, identifier);
+            },
+            FunctionDefinition { type_spec, decl, params, body } => {
+                let (type_id, identifier) = self.declaration(decl, type_spec);
+                self.function_definition(
+                    Type::primitive(type_spec),
+                    params,
+                    type_id,
+                    identifier
+                );
+
+                self.last_func_def = Some(Type::primitive(type_spec));
 
                 if let Some(body) = body {
                     self.statement(body);
                 }
-            },
-            TopLevelStmt::GlobalVariable { type_spec, decl, init } => {
-                let token = self.declaration(decl).expect("Impossible situation");
-                self.add_var(token.clone(), type_spec);
-
-                if let Some(expr) = init {
-                    let type_spec_init = self.expression(expr);
-                    if *type_spec != type_spec_init {
-                        self.error_token(&token, &type_spec, &type_spec_init);
-                    }
-                }
             }
         }
     }
 
-    fn statement(&mut self, stmt: &Stmt<'a>) -> () {
-        match stmt {
-            Stmt::If { cond, stmt, otherwise } => {
-                let cond_type = self.expression(cond);
-                if !matches!(cond_type, TypeSpec::Bool) {
-                    self.error(format!("Expected bool got {:?} at if-statement", cond_type));
-                };
-
-                self.statement(stmt);
-                if let Some(otherwise) = otherwise {
-                    self.statement(otherwise);
+    fn statement(&mut self, stmt: &Stmt<'a>) {
+        use StmtKind::*;
+        match &stmt.kind {
+            If{
+                cond,
+                stmt,
+                otherwise,
+                ..
+            } => {
+                let cond_id = self.expression(cond);
+                if let Some(cond_type) = self.type_map.get(&cond_id) {
+                    if !cond_type.equal(&Type::Primary(PrimaryEnum::Bool)) {
+                        self.error(&cond_id, "Expected bool type");
+                    }
+                    self.statement(stmt);
+                    if let Some(otherwise) = otherwise {
+                        self.statement(otherwise);
+                    }
                 }
             },
-            Stmt::While {..} => {},
-            Stmt::For {..} => {},
-            Stmt::Return(..) => { },
-            Stmt::Compound(stmts) => {
+            While{
+                cond,
+                body,
+                ..
+            } => {
+                let cond_id = self.expression(cond);
+                if let Some(cond_type) = self.type_map.get(&cond_id) {
+                    if !cond_type.equal(&Type::Primary(PrimaryEnum::Bool)) {
+                        self.error(&cond_id, "Expected bool type");
+                    }
+                    self.statement(body);
+                }
+            },
+            For{
+                cond,
+                body,
+                ..
+            } => {
+                let cond_id = self.expression(cond);
+                if let Some(cond_type) = self.type_map.get(&cond_id) {
+                    if !cond_type.equal(&Type::Primary(PrimaryEnum::Bool)) {
+                        self.error(&cond_id, "Expected bool type");
+                    }
+                    self.statement(body);
+                }
+            },
+
+            Compound(stmts) => {
+                self.depth += 1;
                 for stmt in stmts {
                     self.statement(stmt);
                 }
+                self.depth -= 1;
             },
-            Stmt::Expression(..) => { },
-            Stmt::VarDecl{type_spec, decl, init} => { 
-                let token = self.declaration(decl).expect("Impossible case");
-                self.add_var(token.clone(), type_spec);
+            Return{debug, expr} => {
+                let Some(expr) = expr else {
+                    let Some(func_type) = &self.last_func_def else {
+                        unreachable!()
+                    };
 
-                if let Some(expr) = init {
-                    let type_spec_init = self.expression(expr);
-                    if *type_spec != type_spec_init {
-                        self.error_token(&token, &type_spec, &type_spec_init);
+                    if !func_type.equal(&Type::Primary(PrimaryEnum::Void)) {
+                        self.error_token(
+                            debug,
+                            format!("Expected {:?} return type got void", func_type).as_str()
+                        );
                     }
+                    return;
+                };
+
+                let expr_id = self.expression(expr);
+                let Some(expr_type) = self.type_map.get(&expr_id) else {
+                    unreachable!();
+                };
+
+                let Some(func_type) = &self.last_func_def else {
+                    unreachable!()
+                };
+
+                if !func_type.equal(&expr_type) {
+                    self.error_token(
+                        debug,
+                        format!("Expected {:?} return type got {:?}", func_type, expr_type).as_str()
+                    );
                 }
+            },
+
+            Expression(expr) => { self.expression(expr); },
+            VarDecl{type_spec, decl, init} => {
+                let (type_id, identifier) = self.declaration(decl, type_spec);
+                self.variable_definition(type_spec, init, type_id, identifier);
             }
         }
     }
 
-    fn expression(&mut self, expr: &Expr<'a>) -> TypeSpec {
-        match expr {
-            Expr::IntLiteral(_) => TypeSpec::Int,
-            Expr::FloatLiteral(_) => TypeSpec::Float,
-            Expr::BoolLiteral(_) => TypeSpec::Bool,
-            Expr::StringLiteral(_) => TypeSpec::String,
-            Expr::Identifier(token) => {
-                self.last_token = Some(token.clone());
-                self.get_type(token)
+    fn declaration(&mut self, decl: &Decl<'a>, type_spec: &Token<'a>) -> (TypeID, String) {
+        use DeclKind::*;
+
+        let type_id = decl.id.clone();
+        match &decl.kind {
+            Group(decl) => { self.declaration(decl, type_spec) },
+            Pointer(decl) => { self.declaration(decl, type_spec) },
+
+            Identifier(tok) => {
+                self.debug_info(type_id.clone(), tok);
+                (type_id, tok.lexeme.to_string())
             },
 
-            Expr::Call{identifier, arguments} => {
-                let ident_type = self.expression(identifier);
-                let last_token = self.last_token.clone().expect("Impossible case");
-                let types = self.convert_to_types_args(&arguments);
-                self.validate_func(
-                    last_token,
-                    types
+            Function{decl, params} => {
+                let (id, identifier) = self.declaration(decl, type_spec);
+                self.function_definition(
+                    Type::primitive(type_spec),  // TODO: make type recursive
+                    params,
+                    type_id,
+                    identifier.clone()
                 );
-
-                ident_type
+                (id, identifier)
             },
-            Expr::Index{identifier, argument} => {
-                let type_spec = self.expression(argument);
-                if !matches!(type_spec, TypeSpec::Int) {
-                    self.error(format!("Expected Int got {:?}", type_spec));
+            Array{decl, constant} => {
+                let id = self.declaration(decl, type_spec);
+                self.array_definition(
+                    Type::primitive(type_spec),
+                    constant,
+                    type_id
+                );
+                id
+            },
+        }
+    }
+
+    fn expression(&mut self, expr: &Expr<'a>) -> TypeID {
+        use ExprKind::*;
+
+        let type_id = expr.id.clone();
+        match &expr.kind {
+            IntLiteral{debug, ..} => {
+                self.debug_info(type_id.clone(), debug);
+                self.type_map.insert(type_id.clone(), Type::Primary(PrimaryEnum::Int)); 
+                type_id
+            },
+            FloatLiteral{debug, ..} => {
+                self.debug_info(type_id.clone(), debug);
+                self.type_map.insert(type_id.clone(), Type::Primary(PrimaryEnum::Float)); 
+                type_id
+            },
+            BoolLiteral{debug, ..} => {
+                self.debug_info(type_id.clone(), debug);
+                self.type_map.insert(type_id.clone(), Type::Primary(PrimaryEnum::Bool)); 
+                type_id
+            },
+            StringLiteral{debug, ..} => {
+                self.debug_info(type_id.clone(), debug);
+                self.type_map.insert(type_id.clone(), Type::Primary(PrimaryEnum::String)); 
+                type_id
+            },
+            Identifier(tok) => { 
+                self.debug_info(type_id.clone(), tok);
+                let Some((var_id, depth)) = self.var_map.get(&tok.lexeme.to_string()) else {
+                    self.error_token(
+                        tok,
+                        format!("Can't lookup non-existing variable named '{}'", tok.lexeme).as_str()
+                    );
+                    return type_id;
+                };
+                if *depth > self.depth {
+                    self.error_token(
+                        tok,
+                        format!("Trying lookup inaccessible variable '{}'", tok.lexeme).as_str()
+                    );
+                    return type_id;
+                }
+                var_id.clone()
+            },
+
+            Call{identifier, arguments} => {
+                let identifier_id = self.expression(identifier);
+                self.parameters_compare(identifier_id.clone(), arguments);
+                identifier_id
+            },
+            Index{identifier, argument} => {
+                let id = self.expression(argument);
+                if let Some(spec) = self.type_map.get(&id) {
+                    match spec {
+                        Type::Primary(PrimaryEnum::Int) => {},
+                        _ => self.error(&id, "Wrong type used, expected int"),
+                    }
                 }
                 self.expression(identifier)
             },
 
-            Expr::UnaryOp{op, val} => {
-                self.expression(val)
+            UnaryOp{op, val} => {
+                let id = self.expression(val);
+                if let Some(spec) = self.type_map.get(&id) {
+                    match spec {
+                        Type::Primary(PrimaryEnum::Bool) => {},
+                        _ => self.error_unary(op, &id),
+                    }
+                }
+                id
             },
-            Expr::BinaryOp{l, op, r} => {
-                let type_spec_l = self.expression(l);
-                let type_spec_r = self.expression(r);
+            BinaryOp{l, op, r} => {
+                let l_id = self.expression(l);
+                let r_id = self.expression(r);
 
-                if type_spec_l != type_spec_r {
-                    self.error_token(
-                        &op,
-                        &type_spec_l,
-                        &type_spec_r
-                    );
+                if let Some(l_type) = self.type_map.get(&l_id) &&
+                    let Some(r_type) = self.type_map.get(&r_id) && !l_type.equal(r_type) {
+                        self.error_binary(&l_id, op, &r_id);
                 }
 
-                type_spec_l
+                l_id
             },
-            Expr::Assignment {l, op, r} => {
-                let l_type = self.expression(l);
-                let r_type = self.expression(r);
-                if l_type != r_type {
-                    self.error_token(
-                        &op,
-                        &l_type,
-                        &r_type
-                    );
+            LogicalOp{l, op, r} => {
+                let l_id = self.expression(l);
+                let r_id = self.expression(r);
+
+                if let Some(l_type) = self.type_map.get(&l_id) &&
+                    let Some(r_type) = self.type_map.get(&r_id) && !l_type.equal(r_type) {
+                        self.error_binary(&l_id, op, &r_id);
                 }
-                l_type
+
+                l_id
             },
-            Expr::LogicalOp {..} => TypeSpec::Bool,
+            Assignment{l, op, r} => {
+                let l_id = self.expression(l);
+                let r_id = self.expression(r);
 
-            Expr::Group(expr) => self.expression(expr),
-        }
-    }
+                if let Some(l_type) = self.type_map.get(&l_id) &&
+                    let Some(r_type) = self.type_map.get(&r_id) && !l_type.equal(r_type) {
+                        self.error_binary(&l_id, op, &r_id);
+                }
 
-    fn print_errors(&self) -> () {
-        for err in &self.errors {
-            println!("{}", err);
+                l_id
+            },
+
+            Group(expr) => {
+                self.expression(expr)
+            },
         }
     }
 }
