@@ -39,4 +39,20 @@ impl Type {
             _ => todo!()
         }
     }
+
+    pub fn is_primary(&self) -> bool {
+        use Type::*;
+        match self {
+            Primary(_) => true,
+            _ => false
+        }
+    }
+
+    pub fn as_primary(&self) -> &PrimaryEnum {
+        use Type::*;
+        match self {
+            Primary(v) => v,
+            _ => panic!("Bro yo did wrong")
+        }
+    }
 }

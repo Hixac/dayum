@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use anyhow::{Result, bail};
 
-use crate::lexer::Token;
+use crate::lexer::{Token, TokenType};
 use crate::parser::ast::{
     Expr,
     ExprKind,
@@ -17,15 +17,15 @@ use crate::parser::ast::{
 
 use annotation::{Type, TypeID, PrimaryEnum};
 pub mod annotation;
-
+pub mod error;
 
 pub struct TypeChecker {
     pub type_map: HashMap<TypeID, Type>,
-    pub var_map: HashMap<String, (TypeID, usize)>,
+    pub var_map: HashMap<String, (TypeID, u16)>,
     debug: HashMap<TypeID, (u16, usize)>,
     last_func_def: Option<Type>,
-    errors: Vec<String>,
-    depth: usize
+    pub errors: Vec<String>,
+    depth: u16
 }
 
 impl<'a> TypeChecker {
@@ -52,6 +52,9 @@ impl<'a> TypeChecker {
             }
             bail!("Errors are present");
         }
+
+        println!("{:?}", self.type_map);
+        println!("{:?}", self.var_map);
 
         Ok(())
     }
@@ -223,6 +226,11 @@ impl<'a> TypeChecker {
         self.type_map.insert(type_id, var_type);
     }
 
+    fn insert_same_type(&mut self, type_id: TypeID, other_id: &TypeID) {
+        let spec = self.type_map.get(other_id).unwrap().clone();
+        self.type_map.insert(type_id, spec);
+    }
+
     fn top_level_stmt(&mut self, stmt: &TopLevelStmt<'a>) {
         use TopLevelStmtKind::*;
         match &stmt.kind {
@@ -332,9 +340,14 @@ impl<'a> TypeChecker {
                         format!("Expected {:?} return type got {:?}", func_type, expr_type).as_str()
                     );
                 }
+
+                self.insert_same_type(stmt.id.clone(), &expr_id);
             },
 
-            Expression(expr) => { self.expression(expr); },
+            Expression(expr) => { 
+                let expr_id = self.expression(expr); 
+                self.insert_same_type(stmt.id.clone(), &expr_id);
+            },
             VarDecl{type_spec, decl, init} => {
                 let (type_id, identifier) = self.declaration(decl, type_spec);
                 self.variable_definition(type_spec, init, type_id, identifier);
@@ -418,12 +431,15 @@ impl<'a> TypeChecker {
                     );
                     return type_id;
                 }
-                var_id.clone()
+                let var_id = var_id.clone();
+                self.insert_same_type(expr.id.clone(), &var_id);
+                var_id
             },
 
             Call{identifier, arguments} => {
                 let identifier_id = self.expression(identifier);
                 self.parameters_compare(identifier_id.clone(), arguments);
+                self.insert_same_type(expr.id.clone(), &identifier_id);
                 identifier_id
             },
             Index{identifier, argument} => {
@@ -434,7 +450,9 @@ impl<'a> TypeChecker {
                         _ => self.error(&id, "Wrong type used, expected int"),
                     }
                 }
-                self.expression(identifier)
+                let identifier_id = self.expression(identifier);
+                self.insert_same_type(expr.id.clone(), &identifier_id);
+                identifier_id
             },
 
             UnaryOp{op, val} => {
@@ -445,28 +463,72 @@ impl<'a> TypeChecker {
                         _ => self.error_unary(op, &id),
                     }
                 }
+                self.insert_same_type(expr.id.clone(), &id);
                 id
             },
             BinaryOp{l, op, r} => {
                 let l_id = self.expression(l);
                 let r_id = self.expression(r);
 
-                if let Some(l_type) = self.type_map.get(&l_id) &&
-                    let Some(r_type) = self.type_map.get(&r_id) && !l_type.equal(r_type) {
+                if let Some(l_type) = self.type_map.get(&l_id) 
+                    && let Some(r_type) = self.type_map.get(&r_id) {
+
+                    if !l_type.equal(r_type) {
                         self.error_binary(&l_id, op, &r_id);
+                        return l_id;
+                    }
+
+                    if matches!(l_type, Type::Primary(PrimaryEnum::Bool)) {
+                        self.error(
+                            &l_id,
+                            "Can't perform binary operation on bool"
+                        );
+                        return l_id;
+                    }
+
+                    if matches!(op.token_type, TokenType::OpMinus | TokenType::OpStar | TokenType::OpSlash) 
+                        && matches!(l_type, Type::Primary(PrimaryEnum::String)) {
+                        self.error_token(
+                            op,
+                            "Can't perform next binary operations with string: -, *, /"
+                        );
+                        return l_id;
+                    }
+
+                    if !l_type.is_primary() {
+                        self.error(
+                            &l_id,
+                            "Binary operation has complex type, expected to see int, float, string"
+                        );
+                        return l_id;
+                    }
                 }
 
+                self.insert_same_type(expr.id.clone(), &l_id);
                 l_id
             },
             LogicalOp{l, op, r} => {
                 let l_id = self.expression(l);
                 let r_id = self.expression(r);
 
-                if let Some(l_type) = self.type_map.get(&l_id) &&
-                    let Some(r_type) = self.type_map.get(&r_id) && !l_type.equal(r_type) {
+                if let Some(l_type) = self.type_map.get(&l_id) 
+                    && let Some(r_type) = self.type_map.get(&r_id) {
+
+                    if !l_type.equal(r_type) {
                         self.error_binary(&l_id, op, &r_id);
+                        return l_id;
+                    }
+
+                    if !matches!(l_type, Type::Primary(PrimaryEnum::Bool)) {
+                        self.error(
+                            &l_id,
+                            "Can't perform logical operation on any type except bool"
+                        );
+                        return l_id;
+                    }
                 }
 
+                self.insert_same_type(expr.id.clone(), &l_id);
                 l_id
             },
             Assignment{l, op, r} => {
@@ -478,6 +540,7 @@ impl<'a> TypeChecker {
                         self.error_binary(&l_id, op, &r_id);
                 }
 
+                self.insert_same_type(expr.id.clone(), &l_id);
                 l_id
             },
 

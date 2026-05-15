@@ -1,9 +1,10 @@
 use log::{info, error};
 use dayum::{
+    compiler::Compiler,
     lexer::scan::Scanner,
     parser::Parser,
     type_checker::TypeChecker,
-    compiler::Compiler,
+    vm::VM
 };
 use std::{env, fs};
 
@@ -32,8 +33,11 @@ fn run(path: &str) -> Result<(), ()> {
     let mut type_checker = TypeChecker::new();
     println!("{:?}", stmts);
     type_checker.check(&stmts).unwrap();
-    let mut compiler = Compiler::new();
+    let mut compiler = Compiler::new(type_checker.type_map, type_checker.var_map);
     compiler.compile(stmts);
+    println!("{:?}", compiler.chunk);
+    let mut vm = VM::new(compiler.chunk);
+    vm.run().unwrap();
 
     Ok(())
 }

@@ -1,20 +1,5 @@
-void function(float w, char *r, int) {
-    int hello[3];
-    hello[1] = 2.0;
-    {
-        {
-            float lol;
-        }
-        lol;
-    }
-    int hello;
-    return 1;
-}
+int global = 0;
 
-void function() {
-
-}
-
-void other_fuckntion() {
-    function(1, 2, 3);
+void main() {
+    global = 1;
 }
